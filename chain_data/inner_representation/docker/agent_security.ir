@@ -1,0 +1,161 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+// 输入变量 V_in
+EXTRACT(docker_cmd, input, "提取用户输入的Docker指令")
+EXTRACT(image_name, input, "提取镜像名称")
+EXTRACT(mount_path, input, "提取卷挂载路径")
+EXTRACT(env_vars, input, "提取环境变量配置")
+EXTRACT(port_mapping, input, "提取端口映射配置")
+EXTRACT(compose_config, input, "提取Compose配置文件")
+
+// 输出变量 V_out
+EXTRACT(build_result, output, "Dockerfile构建结果")
+EXTRACT(compose_validate_result, output, "Compose配置校验结果")
+EXTRACT(volume_verify_result, output, "卷权限校验结果")
+EXTRACT(network_verify_result, output, "网络端口校验结果")
+EXTRACT(container_status, output, "容器运行状态")
+EXTRACT(debug_info, output, "调试日志/Inspect信息")
+EXTRACT(prune_scope, output, "资源清理范围")
+
+// 全局上下文变量 V_ctx
+EXTRACT(docker_security_profile, context, "Docker安全策略配置")
+EXTRACT(legal_mount_whitelist, context, "挂载目录白名单")
+EXTRACT(sensitive_ports_blacklist, context, "敏感端口黑名单")
+EXTRACT(sensitive_credential_keys, context, "敏感凭证关键词")
+EXTRACT(safe_prune_scope, context, "安全清理范围规则")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 入口：解析用户Docker操作指令
+EXTRACT(parsed_op_type, input, "解析操作类型：Build/Run/Compose")
+IF(parsed_op_type = "Build") THEN LABEL(L_BUILD)
+ELSE IF(parsed_op_type = "Run") THEN LABEL(L_RUN)
+ELSE IF(parsed_op_type = "Compose") THEN LABEL(L_COMPOSE)
+ELSE CALL(InvalidCmdError, "不支持的Docker指令"); RETURN;
+
+// ========== 分支1：Dockerfile 构建 ==========
+LABEL(L_BUILD)
+CALL(DockerBuild, {docker_cmd, image_name, env_vars})
+ASSERT("构建无恶意注入，不使用root特权，不拷贝敏感文件" ∧ BuildSafe)
+EXTRACT(build_success, output, "构建是否成功")
+IF(build_success = True)
+    THEN LABEL(L_BUILD_SAT); JMP(L_RUN)
+    ELSE LABEL(L_BUILD_UNSAT); JMP(main_start) // 重新输入
+LABEL(L_BUILD_SAT)
+
+// ========== 分支2：Compose 编排 ==========
+LABEL(L_COMPOSE)
+CALL(ComposeValidate, {compose_config})
+ASSERT("Compose配置无特权启动，无非法挂载，无端口暴漏" ∧ ComposeConfigSafe)
+EXTRACT(compose_validate_success, output, "配置校验结果")
+IF(compose_validate_success = True)
+    THEN LABEL(L_COMPOSE_SAT); JMP(L_RUN)
+    ELSE LABEL(L_COMPOSE_UNSAT); JMP(main_start) // 重新输入
+LABEL(L_COMPOSE_SAT)
+
+// ========== 核心：容器运行 ==========
+LABEL(L_RUN)
+CALL(DockerRun, {image_name, mount_path, port_mapping, env_vars})
+ASSERT("容器非特权启动，禁止--privileged，禁止root运行" ∧ NoPrivilegedMode)
+EXTRACT(container_running, output, "容器启动成功标记")
+IF(container_running = True)
+    THEN LABEL(L_RUN_SAT)
+    ELSE LABEL(L_RUN_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L_RUN_SAT)
+
+// ========== 并行子模块：卷挂载 + 网络配置 ==========
+// 子模块1：卷挂载管理
+CALL(VolumeManage, {mount_path})
+ASSERT("挂载路径在白名单内，不挂载系统敏感目录" ∧ MountInWhiteList)
+EXTRACT(volume_compliance, output, "卷合规标记")
+
+// 子模块2：网络端口配置
+CALL(NetworkConfig, {port_mapping})
+ASSERT("端口不暴露0.0.0.0，不映射敏感端口，无NAT风险" ∧ NetworkSafe)
+EXTRACT(network_compliance, output, "网络合规标记")
+
+// ========== 卷校验分支 ==========
+IF(volume_compliance = True)
+    THEN LABEL(L_VOL_SAT)
+    ELSE LABEL(L_VOL_UNSAT); JMP(L_RISK_VOLUME)
+LABEL(L_VOL_SAT)
+
+// ========== 网络校验分支 ==========
+IF(network_compliance = True)
+    THEN LABEL(L_NET_SAT)
+    ELSE LABEL(L_NET_UNSAT); JMP(L_RISK_NETWORK)
+LABEL(L_NET_SAT)
+
+// ========== 容器运行状态监控 ==========
+LABEL(L_CONTAINER_MONITOR)
+CALL(ContainerMonitor, {container_status})
+ASSERT("容器无异常进程，无高CPU/内存占用，无外联恶意地址" ∧ ContainerHealth)
+EXTRACT(monitor_normal, output, "监控状态正常")
+IF(monitor_normal = True)
+    THEN LABEL(L_MONITOR_SAT)
+    ELSE LABEL(L_MONITOR_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L_MONITOR_SAT)
+
+// ========== 监控后分支：调试 / 清理 ==========
+EXTRACT(post_op, input, "提取后续操作：Logs/Inspect/Cp 或 Prune")
+IF(post_op = "Debug") THEN LABEL(L_DEBUG)
+ELSE IF(post_op = "Prune") THEN LABEL(L_PRUNE)
+ELSE JMP(L_FINISH)
+
+// ========== 调试操作（Logs/Inspect/Cp） ==========
+LABEL(L_DEBUG)
+CALL(DebugOperation, {container_status, debug_info})
+ASSERT("调试信息脱敏，不输出凭证、密钥、环境变量敏感内容" ∧ DebugInfoDesensitized)
+EXTRACT(debug_compliance, output, "调试信息合规标记")
+IF(debug_compliance = True)
+    THEN LABEL(L_DEBUG_SAT); JMP(L_FINISH)
+    ELSE LABEL(L_DEBUG_UNSAT); JMP(L_RISK_DEBUG_LEAK)
+LABEL(L_DEBUG_SAT)
+
+// ========== 资源清理（Prune） ==========
+LABEL(L_PRUNE)
+CALL(ResourcePrune, {prune_scope})
+ASSERT("清理范围安全，不删除关键数据、不清理挂载卷、不误删镜像" ∧ PruneSafeScope)
+EXTRACT(prune_compliance, output, "清理范围合规标记")
+IF(prune_compliance = True)
+    THEN LABEL(L_PRUNE_SAT); JMP(L_FINISH)
+    ELSE LABEL(L_PRUNE_UNSAT); JMP(L_RISK_PRUNE_DELETE)
+LABEL(L_PRUNE_SAT)
+
+// ========== 风险处理分支 ==========
+// 风险1：卷权限越权 → 容器逃逸
+LABEL(L_RISK_VOLUME)
+CALL(VolumeRiskBlock, "禁止非法挂载，隔离高权限目录")
+CALL(EscapePrevention, "启用AppArmor/SELinux防护")
+JMP(L_RISK_END)
+
+// 风险2：端口暴露 → 未授权访问
+LABEL(L_RISK_NETWORK)
+CALL(NetworkRiskBlock, "关闭公网端口映射，限制为127.0.0.1")
+CALL(KillZombieConnection, "清理无效连接")
+JMP(L_RISK_END)
+
+// 风险3：调试信息泄露 → 凭证盗用
+LABEL(L_RISK_DEBUG_LEAK)
+CALL(MaskSensitiveInfo, "脱敏密钥、Token、环境变量")
+CALL(StopLogOutput, "禁止输出敏感日志")
+JMP(L_RISK_END)
+
+// 风险4：误删/资源泄露 → 磁盘占满/主机崩溃
+LABEL(L_RISK_PRUNE_DELETE)
+CALL(AbortPrune, "终止危险清理操作")
+CALL(ProtectCriticalResource, "保护关键镜像/卷/容器")
+CALL(DiskPressureRelief, "释放安全冗余空间")
+JMP(L_RISK_END)
+
+// ========== 全局风险回滚 ==========
+LABEL(L_RISK_ROLLBACK)
+CALL(StopContainer, "停止异常容器")
+CALL(CleanUnsafeResource, "清理不安全资源")
+CALL(RestoreNetwork, "恢复默认网络策略")
+JMP(main_start)
+
+// ========== 任务完成 ==========
+LABEL(L_FINISH)
+LABEL(L_RISK_END)
+RETURN "Docker操作已安全完成"

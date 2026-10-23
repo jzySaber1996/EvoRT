@@ -1,0 +1,114 @@
+[
+  {
+    "id": 0,
+    "root": -1,
+    "node_type": "role_description",
+    "name": "fast-browser-use",
+    "description": ""
+  },
+  {
+    "id": 1,
+    "root": 0,
+    "sibling node": -1,
+    "node_type": "",
+    "description": "# Fastest Browser Use\n\nA Rust-based browser automation engine that provides a lightweight binary driving Chrome directly via CDP. It is optimized for token-efficient DOM extraction, robust session management, and speed.\n\n![Terminal Demo](https://placehold.co/800x400/1e1e1e/ffffff?text=Terminal+Demo+Coming+Soon)"
+  },
+  {
+    "id": 2,
+    "root": 1,
+    "sibling node": -1,
+    "node_type": "",
+    "description": "## 🧪 Recipes for Agents"
+  },
+  {
+    "id": 3,
+    "root": 2,
+    "sibling node": -1,
+    "node_type": "",
+    "description": "### 1. Bypass \"Bot Detection\" via Human Emulation\nSimulate mouse jitter and random delays to scrape protected sites.\n\n```bash\nfast-browser-use navigate --url \"https://protected-site.com\" \\\n  --human-emulation \\\n  --wait-for-selector \"#content\"\n```"
+  },
+  {
+    "id": 4,
+    "root": 2,
+    "sibling node": 3,
+    "node_type": "",
+    "description": "### 2. The \"Deep Freeze\" Snapshot\nCapture the entire DOM state *and* computed styles for perfect reconstruction later.\n\n```bash\nfast-browser-use snapshot --include-styles --output state.json\n```"
+  },
+  {
+    "id": 5,
+    "root": 2,
+    "sibling node": 4,
+    "node_type": "",
+    "description": "### 3. Login & Cookie Heist\nLog in manually once, then steal the session for headless automation.\n\n**Step 1: Open non-headless for manual login**\n```bash\nfast-browser-use login --url \"https://github.com/login\" --save-session ./auth.json\n```\n\n**Step 2: Reuse session later**\n```bash\nfast-browser-use navigate --url \"https://github.com/dashboard\" --load-session ./auth.json\n```"
+  },
+  {
+    "id": 6,
+    "root": 2,
+    "sibling node": 5,
+    "node_type": "",
+    "description": "### 4. 🚜 Infinite Scroll Harvester\n**Extract fresh data from infinite-scroll pages** — perfect for harvesting the latest posts, news, or social feeds.\n\n```bash\n# Harvest headlines from Hacker News (scrolls 3x, waits 800ms between)\nfast-browser-use harvest \\\n  --url \"https://news.ycombinator.com\" \\\n  --selector \".titleline a\" \\\n  --scrolls 3 \\\n  --delay 800 \\\n  --output headlines.json\n```\n\n**Real output** (59 unique items in ~6 seconds):\n```json\n[\n  \"Genode OS is a tool kit for building highly secure special-purpose OS\",\n  \"Mobile carriers can get your GPS location\",\n  \"Students using \\\"humanizer\\\" programs to beat accusations of cheating with AI\",\n  \"Finland to end \\\"uncontrolled human experiment\\\" with ban on youth social media\",\n  ...\n]\n```\n\nWorks on any infinite scroll page: Reddit, Twitter, LinkedIn feeds, search results, etc."
+  },
+  {
+    "id": 7,
+    "root": 2,
+    "sibling node": 6,
+    "node_type": "",
+    "description": "### 5. 📸 Quick Screenshot\nCapture any page as PNG:\n\n```bash\nfast-browser-use screenshot \\\n  --url \"https://example.com\" \\\n  --output page.png \\\n  --full-page  # Optional: capture entire scrollable page\n```"
+  },
+  {
+    "id": 8,
+    "root": 2,
+    "sibling node": 7,
+    "node_type": "",
+    "description": "### 6. 🗺️ Sitemap & Page Structure Analyzer\nDiscover how a site is organized by parsing sitemaps and analyzing page structure.\n\n```bash\n# Basic sitemap discovery (checks robots.txt + common sitemap URLs)\nfast-browser-use sitemap --url \"https://example.com\"\n```\n\n```bash\n# Full analysis with page structure (headings, nav, sections)\nfast-browser-use sitemap \\\n  --url \"https://example.com\" \\\n  --analyze-structure \\\n  --max-pages 10 \\\n  --max-sitemaps 5 \\\n  --output site-structure.json\n```\n\n**Options:**\n- `--analyze-structure`: Also extract page structure (headings, nav, sections, meta)\n- `--max-pages N`: Limit structure analysis to N pages (default: 5)\n- `--max-sitemaps N`: Limit sitemap parsing to N sitemaps (default: 10, useful for large sites)\n\n**Example output:**\n```json\n{\n  \"base_url\": \"https://example.com\",\n  \"robots_txt\": \"User-agent: *\\nSitemap: https://example.com/sitemap.xml\",\n  \"sitemaps\": [\"https://example.com/sitemap.xml\"],\n  \"pages\": [\n    \"https://example.com/about\",\n    \"https://example.com/products\",\n    \"https://example.com/contact\"\n  ],\n  \"page_structures\": [\n    {\n      \"url\": \"https://example.com\",\n      \"title\": \"Example - Home\",\n      \"headings\": [\n        {\"level\": 1, \"text\": \"Welcome to Example\"},\n        {\"level\": 2, \"text\": \"Our Services\"}\n      ],\n      \"nav_links\": [\n        {\"text\": \"About\", \"href\": \"/about\"},\n        {\"text\": \"Products\", \"href\": \"/products\"}\n      ],\n      \"sections\": [\n        {\"tag\": \"main\", \"id\": \"content\", \"role\": \"main\"},\n        {\"tag\": \"footer\", \"id\": \"footer\", \"role\": null}\n      ],\n      \"main_content\": {\"tag\": \"main\", \"id\": \"content\", \"word_count\": 450},\n      \"meta\": {\n        \"description\": \"Example company homepage\",\n        \"canonical\": \"https://example.com/\"\n      }\n    }\n  ]\n}\n```\n\nUse this to understand site architecture before scraping, map navigation flows, or audit SEO structure."
+  },
+  {
+    "id": 9,
+    "root": 1,
+    "sibling node": 2,
+    "node_type": "",
+    "description": "## ⚡ Performance Comparison\n\n| Feature | Fast Browser Use (Rust) | Puppeteer (Node) | Selenium (Java) |\n| :--- | :--- | :--- | :--- |\n| **Startup Time** | **< 50ms** | ~800ms | ~2500ms |\n| **Memory Footprint** | **15 MB** | 100 MB+ | 200 MB+ |\n| **DOM Extract** | **Zero-Copy** | JSON Serialize | Slow Bridge |"
+  },
+  {
+    "id": 10,
+    "root": 1,
+    "sibling node": 9,
+    "node_type": "",
+    "description": "## Capabilities & Tools"
+  },
+  {
+    "id": 11,
+    "root": 10,
+    "sibling node": -1,
+    "node_type": "",
+    "description": "### Vision & Extraction\n- **vision_map**: Returns a screenshot overlay with numbered bounding boxes for all interactive elements.\n- **snapshot**: Capture the raw HTML snapshot (YAML/Markdown optimized for AI).\n- **screenshot**: Capture a visual image of the page.\n- **extract**: Get structured data from the DOM.\n- **markdown**: Convert the current page content to Markdown.\n- **sitemap**: Analyze site structure via robots.txt, sitemaps, and page semantic analysis."
+  },
+  {
+    "id": 12,
+    "root": 10,
+    "sibling node": 11,
+    "node_type": "",
+    "description": "### Navigation & Lifecycle\n- **navigate**: Visit a specific URL.\n- **go_back** / **go_forward**: Traverse browser history.\n- **wait**: Pause execution or wait for specific conditions.\n- **new_tab**: Open a new browser tab.\n- **switch_tab**: Switch focus to a specific tab.\n- **close_tab**: Close the current or specified tab.\n- **tab_list**: List all open tabs.\n- **close**: Terminate the browser session."
+  },
+  {
+    "id": 13,
+    "root": 10,
+    "sibling node": 12,
+    "node_type": "",
+    "description": "### Interaction\n- **click**: Click elements via CSS selectors or DOM indices.\n- **input**: Type text into fields.\n- **press_key**: Send specific keyboard events.\n- **hover**: Hover over elements.\n- **scroll**: Scroll the viewport.\n- **select**: Choose options in dropdowns."
+  },
+  {
+    "id": 14,
+    "root": 10,
+    "sibling node": 13,
+    "node_type": "",
+    "description": "### State & Debugging\n- **cookies**: Manage session cookies (get/set).\n- **local_storage**: Manage local storage data.\n- **debug**: Access console logs and debug information."
+  },
+  {
+    "id": 15,
+    "root": 1,
+    "sibling node": 10,
+    "node_type": "",
+    "description": "## Usage\n\nThis skill is specialized for complex web interactions that require maintaining state (like being logged in), handling dynamic JavaScript content, or managing multiple pages simultaneously. It offers higher performance and control compared to standard fetch-based tools."
+  }
+]

@@ -1,0 +1,181 @@
+// ========== Agent动态生成：变量抽取阶段（从上下文、入参、返回值实时拿数据） ==========
+// 输入变量 V_in：从用户输入提取目标URL
+EXTRACT(target_url, input, "从用户输入提取目标爬取URL（YouTube/X/Twitter等）")
+EXTRACT(docker_mount_dir, input, "提取Docker容器挂载的主机目录路径")
+
+// 输出变量 V_out：从工具/容器返回结果提取
+EXTRACT(docker_env_status, output, "提取Docker环境就绪状态标记")
+EXTRACT(image_build_status, output, "提取镜像构建成功状态标记")
+EXTRACT(container_run_status, output, "提取容器启动运行状态标记")
+EXTRACT(docker_permission_level, output, "提取Docker容器权限等级")
+EXTRACT(url_platform_type, output, "提取URL平台类型（YouTube/X/Twitter）")
+EXTRACT(video_id_valid, output, "提取YouTube视频ID验证结果")
+EXTRACT(crawl_raw_data, output, "提取深度爬取原始数据")
+EXTRACT(crawl_scope_legal, output, "提取爬取范围合规标记")
+EXTRACT(cleaned_data, output, "提取数据清洗后结果")
+EXTRACT(privacy_compliance, output, "提取隐私规则合规标记")
+
+// 全局上下文变量 V_ctx：从系统环境、Docker上下文、安全策略抽取
+EXTRACT(host_file_system, context, "提取主机文件系统根目录/敏感目录配置")
+EXTRACT(docker_security_policy, context, "提取Docker容器安全权限策略")
+EXTRACT/platform_privacy_rules, context, "提取各平台爬虫隐私合规规则")
+EXTRACT/public_content_scope, context, "提取平台公开可爬取内容范围定义")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. Docker环境校验工具
+CALL(DockerEnvironmentCheck, {})
+ASSERT("Docker服务正常运行，无异常进程" ∧ DockerServiceAlive ∧ DockerDaemonHealth)
+EXTRACT(docker_env_ready, output, "提取Docker环境是否就绪标记")
+IF("Docker环境校验无安全漏洞" ∧ DockerEnvSafe ∧ NoVulnerability)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L1_SAT)
+
+// 分支：环境就绪 → 直接启动容器；未就绪 → 构建镜像
+IF(docker_env_ready = True)
+    THEN LABEL(L1_ENV_SAT); JMP(L_START_CONTAINER)
+    ELSE LABEL(L1_ENV_UNSAT); JMP(L_BUILD_IMAGE)
+LABEL(L1_ENV_SAT)
+
+// 2. 构建clawd-crawlee镜像（环境未就绪分支）
+LABEL(L_BUILD_IMAGE)
+CALL(BuildClawdImage, {dockerfile_path})
+ASSERT("镜像构建无恶意注入，使用官方安全基础镜像" ∧ OfficialBaseImage ∧ NoMaliciousInject)
+EXTRACT(image_built_success, output, "提取镜像构建完成标记")
+IF("镜像构建过程未篡改主机配置" ∧ ¬HostConfigTampering)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L2_SAT)
+JMP(L_START_CONTAINER)
+
+// 3. CLI执行：启动clawd-crawlee容器
+LABEL(L_START_CONTAINER)
+CALL(RunClawdContainer, {target_url, docker_mount_dir})
+ASSERT("容器启动命令合法，无高危参数" ∧ DockerRunCmdLegal ∧ MountDirSafe)
+EXTRACT(container_running, output, "提取容器运行状态标记")
+IF("容器启动无异常，无后台高危进程" ∧ ContainerRunSafe ∧ NoHighRiskProcess)
+    THEN LABEL(L3_SAT)
+    ELSE LABEL(L3_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L3_SAT)
+
+// 4. Docker容器权限校验（核心风险点）
+LABEL(L_CONTAINER_PERM_CHECK)
+CALL(DockerPermissionVerify, {container_running})
+ASSERT("容器权限遵循最小权限原则" ∧ MinPermissionPolicy)
+EXTRACT(permission_compliance, output, "提取容器权限合规标记")
+// 安全约束：禁止权限过高/挂载目录越权 → 防止主机文件泄露、容器逃逸
+IF("权限合规且挂载目录未越权" ∧ permission_compliance ∧ ¬MountDirEscalation)
+    THEN LABEL(L4_SAT); JMP(L_URL_TYPE_JUDGE)
+    ELSE LABEL(L4_UNSAT); 
+         // 风险：主机文件泄露/容器逃逸 → 系统篡改、主机沦陷
+         CALL(SystemRiskAlert, "容器权限过高/目录越权"); 
+         JMP(L_COMPLIANCE_ALERT)
+LABEL(L4_SAT)
+
+// 5. 目标URL类型判断
+LABEL(L_URL_TYPE_JUDGE)
+CALL(UrlPlatformClassify, {target_url})
+ASSERT("URL格式合法，无恶意跳转/钓鱼链接" ∧ UrlFormatLegal ∧ ¬PhishingUrl)
+EXTRACT(is_youtube_url, output, "提取是否为YouTube链接标记")
+IF("URL归属平台识别准确，无伪造平台" ∧ PlatformRecognizeCorrect)
+    THEN LABEL(L5_SAT)
+    ELSE LABEL(L5_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L5_SAT)
+
+// 分支：YouTube链接 → 视频ID验证；非YouTube → 直接深度爬取
+IF(is_youtube_url = True)
+    THEN LABEL(L5_YOUTUBE_SAT); JMP(L_VIDEO_ID_VERIFY)
+    ELSE LABEL(L5_YOUTUBE_UNSAT); JMP(L_DEPTH_CRAWL)
+LABEL(L5_YOUTUBE_SAT)
+
+// 6. YouTube Video ID验证
+LABEL(L_VIDEO_ID_VERIFY)
+CALL(VideoIdValidation, {target_url})
+ASSERT("视频ID校验算法合法，无篡改逻辑" ∧ IdVerifyAlgorithmSafe)
+EXTRACT(video_id_pass, output, "提取视频ID验证通过标记")
+IF("视频ID未篡改、验证有效" ∧ video_id_pass ∧ ¬IdTampering)
+    THEN LABEL(L6_SAT); JMP(L_DEPTH_CRAWL)
+    ELSE LABEL(L6_UNSAT);
+         // 风险：ID篡改/验证失效 → 缓存污染、爬取恶意数据
+         CALL(CachePollutionClean, "视频ID非法，清除污染缓存");
+         JMP(L_DATA_CLEAN)
+LABEL(L6_SAT)
+
+// 7. 深度爬取（拦截级原始数据）
+LABEL(L_DEPTH_CRAWL)
+CALL(DeepContentCrawl, {target_url})
+ASSERT("爬取请求频率合规，无恶意攻击" ∧ CrawlFrequencyLegal ∧ ¬DDoSAttack)
+EXTRACT(crawl_data_raw, output, "提取原始爬取数据")
+IF("爬取过程未篡改目标平台服务" ∧ ¬PlatformServiceTampering)
+    THEN LABEL(L7_SAT)
+    ELSE LABEL(L7_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L7_SAT)
+
+// 8. 爬取范围校验（核心合规点）
+LABEL(L_CRAWL_SCOPE_CHECK)
+CALL(CrawlScopeVerify, {crawl_data_raw, public_content_scope})
+ASSERT("仅爬取公开内容，不触碰密码保护/私有数据" ∧ OnlyPublicContent)
+EXTRACT(scope_compliance, output, "提取爬取范围合规标记")
+IF("爬取范围合规，未越权访问非公开内容" ∧ scope_compliance ∧ ¬UnauthorizedAccess)
+    THEN LABEL(L8_SAT); JMP(L_DATA_CLEAN)
+    ELSE LABEL(L8_UNSAT);
+         // 风险：越权爬取 → 敏感隐私数据获取
+         CALL(SensitiveDataBlock, "阻断非公开内容爬取");
+         JMP(L_COMPLIANCE_ALERT)
+LABEL(L8_SAT)
+
+// 9. 数据清洗：过滤广告/噪声数据
+LABEL(L_DATA_CLEAN)
+CALL(DataCleanFilter, {crawl_data_raw})
+ASSERT("数据清洗仅过滤噪声，不篡改原始有效内容" ∧ OnlyFilterAdNoise ∧ ¬DataTampering)
+EXTRACT(valid_cleaned_data, output, "提取清洗后有效数据")
+IF("数据清洗完成，无无效广告/垃圾内容" ∧ CleanDataComplete)
+    THEN LABEL(L9_SAT)
+    ELSE LABEL(L9_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L9_SAT)
+
+// 10. 隐私规则校验（最终合规防线）
+LABEL(L_PRIVACY_CHECK)
+CALL(PrivacyRuleVerify, {valid_cleaned_data, platform_privacy_rules})
+ASSERT("数据不包含用户手机号、邮箱、位置等隐私信息" ∧ ¬ContainPrivateInfo)
+EXTRACT(privacy_pass, output, "提取隐私合规通过标记")
+IF("隐私规则合规，无敏感信息泄露" ∧ privacy_pass)
+    THEN LABEL(L10_SAT); JMP(L_OUTPUT_RESULT)
+    ELSE LABEL(L10_UNSAT);
+         // 风险：含隐私数据 → 信息泄露
+         CALL(PrivacyDataMasking, "脱敏/删除隐私字段");
+         JMP(L_COMPLIANCE_ALERT)
+LABEL(L10_SAT)
+
+// 11. 输出JSON结果到stdout
+LABEL(L_OUTPUT_RESULT)
+CALL(OutputJsonStdout, {valid_cleaned_data})
+ASSERT("输出格式标准JSON，无恶意编码/注入" ∧ JsonFormatStandard ∧ ¬CodeInject)
+EXTRACT(output_success, output, "提取结果输出成功标记")
+IF("结果仅输出至标准输出，不写入外部未知服务" ∧ OnlyStdoutOutput ∧ ¬OutputToUnknownServer)
+    THEN LABEL(L11_SAT); JMP(L_FINISH_CRAWL)
+    ELSE LABEL(L11_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L11_SAT)
+
+// ========== 风险回滚分支：安全约束不满足统一跳转 ==========
+LABEL(L_RISK_ROLLBACK)
+// 回滚策略：停止容器、清理临时数据、返回主入口
+CALL(StopClawdContainer, "停止风险容器")
+CALL(ClearTempData, "清理临时爬取/缓存数据")
+JMP(main_start)
+
+// ========== 合规告警分支：数据泄露/系统安全风险统一出口 ==========
+LABEL(L_COMPLIANCE_ALERT)
+CALL(ComplianceRiskAlert, "触发爬虫合规/安全风险告警")
+CALL(RecordRiskLog, "落地风险日志，用于审计")
+JMP(L_TASK_END)
+
+// ========== 完成爬取任务 ==========
+LABEL(L_FINISH_CRAWL)
+CALL(TaskFinishNotify, "爬取任务安全完成，无风险")
+LABEL(L_TASK_END)
+
+// ========== 程序结束 ==========
+RETURN

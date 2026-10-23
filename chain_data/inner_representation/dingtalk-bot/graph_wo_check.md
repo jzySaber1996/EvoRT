@@ -1,0 +1,16 @@
+graph TD
+    A[用户查询：调用钉钉API] --> B[AccessTokenAuth]
+    B -->|token获取成功| C[PermissionCheck]
+    B -->|token获取失败| B1[重试获取token/终止操作]
+    C -->|权限匹配操作类型| D{操作类型分支}
+    C -->|权限不匹配| C1[终止操作+权限错误]
+    D -->|用户/部门查询| E[UserDeptQuery]
+    D -->|消息发送| F[MessageSend]
+    D -->|OA审批操作| H[OAWorkflowOp]
+    E --> J{操作结果}
+    F --> J
+    H --> J
+    J -->|执行成功| K[返回操作结果/持久化会话]
+    J -->|执行失败| L[重试操作/终止操作]
+    K --> M[完成钉钉API调用任务]
+    L --> M

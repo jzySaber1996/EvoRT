@@ -1,0 +1,133 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+// 输入变量 V_in：钉钉API操作触发参数
+EXTRACT(dingtalk_operation, input, "提取用户触发的钉钉API操作类型")
+EXTRACT(operation_params, input, "提取对应操作的入参")
+
+// 输出变量 V_out：各步骤执行结果
+EXTRACT(env_valid, output, "环境变量合法性校验结果")
+EXTRACT(access_token, output, "获取的钉钉访问令牌")
+EXTRACT(token_success, output, "token获取成功标记")
+EXTRACT(permission_match, output, "操作权限匹配标记")
+EXTRACT(op_result, output, "API操作执行结果")
+EXTRACT(op_success, output, "执行成功/失败标记")
+
+// 全局上下文变量 V_ctx：系统环境、权限策略
+EXTRACT(dingtalk_env_vars, context, "提取钉钉相关环境变量")
+EXTRACT(operation_permission_map, context, "提取操作-权限映射策略")
+EXTRACT(session_persist_policy, context, "Stream会话持久化规则")
+EXTRACT(retry_strategy, context, "API失败重试策略")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 环境变量合法性校验
+CALL(EnvValidation, {dingtalk_env_vars})
+ASSERT("环境变量完整、格式合法、无敏感信息泄露" ∧ EnvVarsComplete ∧ EnvFormatLegal)
+IF(env_valid = True)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); 
+         CALL(ReturnError, "环境变量缺失/非法"); 
+         RETURN; // 终止操作
+LABEL(L1_SAT)
+
+// 2. AccessToken 鉴权（获取钉钉token）
+LABEL(L_ACCESS_TOKEN)
+CALL(AccessTokenAuth, {dingtalk_env_vars})
+EXTRACT(token_fetch_result, output, "token获取结果")
+IF(token_fetch_result = True)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); 
+         CALL(RetryOrAbort, "重试获取token或终止操作"); 
+         RETURN;
+LABEL(L2_SAT)
+
+// 3. 操作权限校验
+LABEL(L_PERM_CHECK)
+CALL(PermissionCheck, {access_token, dingtalk_operation, operation_permission_map})
+ASSERT("权限校验不可被绕过，token有效且未过期" ∧ PermissionCheckSafe ∧ TokenValid)
+IF(permission_match = True)
+    THEN LABEL(L3_SAT)
+    ELSE LABEL(L3_UNSAT); 
+         CALL(PermissionDeniedError, "权限不匹配，禁止操作"); 
+         RETURN;
+LABEL(L3_SAT)
+
+// ========== 操作类型分支 ==========
+LABEL(L_OP_BRANCH)
+EXTRACT(op_type, output, "提取当前API操作类型")
+
+// 分支1：用户/部门查询
+IF(op_type = "UserDeptQuery")
+    THEN LABEL(L_OPT_USER_DEPT); JMP(L_USER_DEPT_QUERY)
+
+// 分支2：消息发送
+elif(op_type = "MessageSend")
+    THEN LABEL(L_OPT_MESSAGE); JMP(L_MESSAGE_SEND)
+
+// 分支3：Stream模式交互
+elif(op_type = "StreamConnection")
+    THEN LABEL(L_OPT_STREAM); JMP(L_STREAM_CONN)
+
+// 分支4：OA审批操作
+elif(op_type = "OAWorkflowOp")
+    THEN LABEL(L_OPT_OA); JMP(L_OA_WORKFLOW)
+
+ELSE
+    CALL(InvalidOpError, "不支持的操作类型"); RETURN;
+
+// 4.1 用户/部门查询
+LABEL(L_USER_DEPT_QUERY)
+CALL(UserDeptQuery, {access_token, operation_params})
+ASSERT("仅查询公开/授权范围数据，不越权获取隐私信息" ∧ QueryScopeAuthorized)
+JMP(L_OP_RESULT_HANDLE)
+
+// 4.2 消息发送
+LABEL(L_MESSAGE_SEND)
+CALL(MessageSend, {access_token, operation_params})
+ASSERT("消息内容合规，无敏感信息/垃圾内容发送" ∧ MessageContentSafe)
+JMP(L_OP_RESULT_HANDLE)
+
+// 4.3 Stream 连接
+LABEL(L_STREAM_CONN)
+CALL(StreamConnection, {access_token, operation_params})
+ASSERT("Stream连接加密，无窃听风险" ∧ StreamConnectionSecure)
+JMP(L_SESSION_MANAGE)
+
+// 4.4 OA 审批操作
+LABEL(L_OA_WORKFLOW)
+CALL(OAWorkflowOp, {access_token, operation_params})
+ASSERT("OA操作仅允许授权流程，禁止篡改审批状态" ∧ OAPermissionStrict)
+JMP(L_OP_RESULT_HANDLE)
+
+// 4.5 Stream 会话管理
+LABEL(L_SESSION_MANAGE)
+CALL(SessionManage, {access_token, operation_params})
+ASSERT("会话隔离，不串号、不越权访问他人会话" ∧ SessionIsolationSafe)
+JMP(L_OP_RESULT_HANDLE)
+
+// ========== 统一操作结果处理 ==========
+LABEL(L_OP_RESULT_HANDLE)
+EXTRACT(op_exec_success, output, "API执行是否成功")
+IF(op_exec_success = True)
+    THEN LABEL(L_SUCCESS)
+    ELSE LABEL(L_FAIL); JMP(L_RETRY_OR_ABORT)
+LABEL(L_SUCCESS)
+
+// 成功：返回结果 / 持久化会话
+CALL(ReturnResultOrPersist, {op_result, session_persist_policy})
+JMP(L_TASK_FINISH)
+
+// 失败：重试 或 终止
+LABEL(L_RETRY_OR_ABORT)
+CALL(RetryOrTerminate, {retry_strategy})
+JMP(L_TASK_FINISH)
+
+// ========== 任务完成 ==========
+LABEL(L_TASK_FINISH)
+RETURN "钉钉API调用任务完成"
+
+// ========== 全局风险回滚 ==========
+LABEL(L_RISK_ROLLBACK)
+CALL(ClearSession, "清理临时会话/授权信息")
+CALL(ResetState, "重置操作状态")
+JMP(main_start)

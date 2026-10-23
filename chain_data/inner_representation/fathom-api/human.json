@@ -1,0 +1,361 @@
+[
+  {
+    "id": 0,
+    "root": -1,
+    "node_type": "role_description",
+    "name": "fathom",
+    "description": "Fathom API integration with managed OAuth. Access meeting recordings, transcripts, summaries, and manage webhooks. Use this skill when users want to retrieve meeting content, search recordings, or set up webhook notifications for new meetings. For other third party apps, use the api-gateway skill (https://clawhub.ai/byungkyu/api-gateway).",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 1,
+    "root": 0,
+    "sibling node": -1,
+    "node_type": "others",
+    "description": "# Fathom\n\nAccess the Fathom API with managed OAuth authentication. Retrieve meeting recordings, transcripts, summaries, action items, and manage webhooks for notifications.",
+    "risk_type": []
+  },
+  {
+    "id": 2,
+    "root": 1,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "## Quick Start\n\n```bash\n# List recent meetings\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/meetings')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 3,
+    "root": 1,
+    "sibling node": 2,
+    "node_type": "constraint and advice",
+    "description": "## Base URL\n\n```\nhttps://gateway.maton.ai/fathom/{native-api-path}\n```\n\nReplace `{native-api-path}` with the actual Fathom API endpoint path. The gateway proxies requests to `api.fathom.ai` and automatically injects your OAuth token.",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 4,
+    "root": 1,
+    "sibling node": 3,
+    "node_type": "function",
+    "description": "## Authentication\n\nAll requests require the Maton API key in the Authorization header:\n\n```\nAuthorization: Bearer $MATON_API_KEY\n```\n\n**Environment Variable:** Set your API key as `MATON_API_KEY`:\n\n```bash\nexport MATON_API_KEY=\"YOUR_API_KEY\"\n```",
+    "risk_type": [
+      1,
+      5,
+      7
+    ]
+  },
+  {
+    "id": 5,
+    "root": 4,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "### Getting Your API Key\n\n1. Sign in or create an account at [maton.ai](https://maton.ai)\n2. Go to [maton.ai/settings](https://maton.ai/settings)\n3. Copy your API key",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 6,
+    "root": 1,
+    "sibling node": 4,
+    "node_type": "function",
+    "description": "## Connection Management\n\nManage your Fathom OAuth connections at `https://ctrl.maton.ai`.",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 7,
+    "root": 6,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "### List Connections\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://ctrl.maton.ai/connections?app=fathom&status=ACTIVE')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 8,
+    "root": 6,
+    "sibling node": 7,
+    "node_type": "function",
+    "description": "### Create Connection\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\ndata = json.dumps({'app': 'fathom'}).encode()\nreq = urllib.request.Request('https://ctrl.maton.ai/connections', data=data, method='POST')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nreq.add_header('Content-Type', 'application/json')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 9,
+    "root": 6,
+    "sibling node": 8,
+    "node_type": "function",
+    "description": "### Get Connection\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://ctrl.maton.ai/connections/{connection_id}')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"connection\": {\n    \"connection_id\": \"21fd90f9-5935-43cd-b6c8-bde9d915ca80\",\n    \"status\": \"ACTIVE\",\n    \"creation_time\": \"2025-12-08T07:20:53.488460Z\",\n    \"last_updated_time\": \"2026-01-31T20:03:32.593153Z\",\n    \"url\": \"https://connect.maton.ai/?session_token=...\",\n    \"app\": \"fathom\",\n    \"metadata\": {}\n  }\n}\n```\n\nOpen the returned `url` in a browser to complete OAuth authorization.",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 10,
+    "root": 6,
+    "sibling node": 9,
+    "node_type": "function",
+    "description": "### Delete Connection\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://ctrl.maton.ai/connections/{connection_id}', method='DELETE')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 11,
+    "root": 6,
+    "sibling node": 10,
+    "node_type": "function",
+    "description": "### Specifying Connection\n\nIf you have multiple Fathom connections, specify which one to use with the `Maton-Connection` header:\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/meetings')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nreq.add_header('Maton-Connection', '21fd90f9-5935-43cd-b6c8-bde9d915ca80')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\nIf omitted, the gateway uses the default (oldest) active connection.",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 12,
+    "root": 1,
+    "sibling node": 6,
+    "node_type": "reference",
+    "description": "## API Reference",
+    "risk_type": []
+  },
+  {
+    "id": 13,
+    "root": 12,
+    "sibling node": -1,
+    "node_type": "reference",
+    "description": "### Meetings",
+    "risk_type": []
+  },
+  {
+    "id": 14,
+    "root": 13,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "#### List Meetings\n\n```bash\nGET /fathom/external/v1/meetings\n```\n\nQuery parameters:\n- `cursor` - Cursor for pagination\n- `created_after` - Filter to meetings created after this timestamp (e.g., `2025-01-01T00:00:00Z`)\n- `created_before` - Filter to meetings created before this timestamp\n- `calendar_invitees_domains[]` - Filter by company domains (pass once per value)\n- `calendar_invitees_domains_type` - Filter by invitee type: `all`, `only_internal`, `one_or_more_external`\n- `recorded_by[]` - Filter by email addresses of users who recorded meetings\n- `teams[]` - Filter by team names\n\n**Note:** OAuth users cannot use `include_transcript`, `include_summary`, `include_action_items`, or `include_crm_matches` parameters on this endpoint. Use the `/recordings/{recording_id}/summary` and `/recordings/{recording_id}/transcript` endpoints instead.\n\n**Example with filters:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/meetings?created_after=2025-01-01T00:00:00Z&teams[]=Sales')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"limit\": 10,\n  \"next_cursor\": \"eyJwYWdlX251bSI6Mn0=\",\n  \"items\": [\n    {\n      \"title\": \"Quarterly Business Review\",\n      \"meeting_title\": \"QBR 2025 Q1\",\n      \"recording_id\": 123456789,\n      \"url\": \"https://fathom.video/xyz123\",\n      \"share_url\": \"https://fathom.video/share/xyz123\",\n      \"created_at\": \"2025-03-01T17:01:30Z\",\n      \"scheduled_start_time\": \"2025-03-01T16:00:00Z\",\n      \"scheduled_end_time\": \"2025-03-01T17:00:00Z\",\n      \"recording_start_time\": \"2025-03-01T16:01:12Z\",\n      \"recording_end_time\": \"2025-03-01T17:00:55Z\",\n      \"calendar_invitees_domains_type\": \"one_or_more_external\",\n      \"transcript_language\": \"en\",\n      \"transcript\": null,\n      \"default_summary\": null,\n      \"action_items\": null,\n      \"crm_matches\": null,\n      \"recorded_by\": {\n        \"name\": \"Alice Johnson\",\n        \"email\": \"alice.johnson@acme.com\",\n        \"email_domain\": \"acme.com\",\n        \"team\": \"Marketing\"\n      },\n      \"calendar_invitees\": [\n        {\n          \"name\": \"Alice Johnson\",\n          \"email\": \"alice.johnson@acme.com\",\n          \"email_domain\": \"acme.com\",\n          \"is_external\": false,\n          \"matched_speaker_display_name\": null\n        }\n      ]\n    }\n  ]\n}\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 15,
+    "root": 12,
+    "sibling node": 13,
+    "node_type": "reference",
+    "description": "### Recordings",
+    "risk_type": []
+  },
+  {
+    "id": 16,
+    "root": 15,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "#### Get Summary\n\n```bash\nGET /fathom/external/v1/recordings/{recording_id}/summary\n```\n\nQuery parameters:\n- `destination_url` - Optional URL for async callback. If provided, the summary will be POSTed to this URL.\n\n**Synchronous example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/recordings/123456789/summary')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"summary\": {\n    \"template_name\": \"general\",\n    \"markdown_formatted\": \"## Summary\\n\\nWe reviewed Q1 OKRs, identified budget risks, and agreed to revisit projections next month.\"\n  }\n}\n```\n\n**Async example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/recordings/123456789/summary?destination_url=https://example.com/webhook')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 17,
+    "root": 15,
+    "sibling node": 16,
+    "node_type": "function",
+    "description": "#### Get Transcript\n\n```bash\nGET /fathom/external/v1/recordings/{recording_id}/transcript\n```\n\nQuery parameters:\n- `destination_url` - Optional URL for async callback. If provided, the transcript will be POSTed to this URL.\n\n**Synchronous example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/recordings/123456789/transcript')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"transcript\": [\n    {\n      \"speaker\": {\n        \"display_name\": \"Alice Johnson\",\n        \"matched_calendar_invitee_email\": \"alice.johnson@acme.com\"\n      },\n      \"text\": \"Let's revisit the budget allocations.\",\n      \"timestamp\": \"00:05:32\"\n    }\n  ]\n}\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 18,
+    "root": 12,
+    "sibling node": 15,
+    "node_type": "reference",
+    "description": "### Teams",
+    "risk_type": []
+  },
+  {
+    "id": 19,
+    "root": 18,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "#### List Teams\n\n```bash\nGET /fathom/external/v1/teams\n```\n\nQuery parameters:\n- `cursor` - Cursor for pagination\n\n**Example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/teams')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"limit\": 25,\n  \"next_cursor\": null,\n  \"items\": [\n    {\n      \"name\": \"Sales\",\n      \"created_at\": \"2023-11-10T12:00:00Z\"\n    }\n  ]\n}\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 20,
+    "root": 12,
+    "sibling node": 18,
+    "node_type": "reference",
+    "description": "### Team Members",
+    "risk_type": []
+  },
+  {
+    "id": 21,
+    "root": 20,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "#### List Team Members\n\n```bash\nGET /fathom/external/v1/team_members\n```\n\nQuery parameters:\n- `cursor` - Cursor for pagination\n- `team` - Team name to filter by\n\n**Example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/team_members?team=Sales')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"limit\": 25,\n  \"next_cursor\": null,\n  \"items\": [\n    {\n      \"name\": \"Bob Lee\",\n      \"email\": \"bob.lee@acme.com\",\n      \"created_at\": \"2024-06-01T08:30:00Z\"\n    }\n  ]\n}\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 22,
+    "root": 12,
+    "sibling node": 20,
+    "node_type": "reference",
+    "description": "### Webhooks",
+    "risk_type": []
+  },
+  {
+    "id": 23,
+    "root": 22,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "#### Create Webhook\n\n```bash\nPOST /fathom/external/v1/webhooks\nContent-Type: application/json\n\n{\n  \"destination_url\": \"https://example.com/webhook\",\n  \"triggered_for\": [\"my_recordings\", \"my_shared_with_team_recordings\"],\n  \"include_transcript\": true,\n  \"include_summary\": true,\n  \"include_action_items\": true,\n  \"include_crm_matches\": false\n}\n```\n\n**triggered_for options:**\n- `my_recordings` - Your private recordings (excludes those shared with teams on Team Plans)\n- `shared_external_recordings` - Recordings shared with you by other users\n- `my_shared_with_team_recordings` - (Team Plans) Recordings you've shared with teams\n- `shared_team_recordings` - (Team Plans) Recordings from other users on your Team Plan\n\nAt least one of `include_transcript`, `include_summary`, `include_action_items`, or `include_crm_matches` must be true.\n\n**Example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\ndata = json.dumps({'destination_url': 'https://example.com/webhook', 'triggered_for': ['my_recordings'], 'include_summary': True}).encode()\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/webhooks', data=data, method='POST')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nreq.add_header('Content-Type', 'application/json')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\n**Response:**\n```json\n{\n  \"id\": \"ikEoQ4bVoq4JYUmc\",\n  \"url\": \"https://example.com/webhook\",\n  \"secret\": \"whsec_x6EV6NIAAz3ldclszNJTwrow\",\n  \"created_at\": \"2025-06-30T10:40:46Z\",\n  \"include_transcript\": false,\n  \"include_crm_matches\": false,\n  \"include_summary\": true,\n  \"include_action_items\": false,\n  \"triggered_for\": [\"my_recordings\"]\n}\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 24,
+    "root": 22,
+    "sibling node": 23,
+    "node_type": "function",
+    "description": "#### Delete Webhook\n\n```bash\nDELETE /fathom/external/v1/webhooks/{id}\n```\n\n**Example:**\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/webhooks/ikEoQ4bVoq4JYUmc', method='DELETE')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```\n\nReturns `204 No Content` on success.",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 25,
+    "root": 1,
+    "sibling node": 12,
+    "node_type": "function",
+    "description": "## Pagination\n\nUse `cursor` for pagination. Response includes `next_cursor` when more results exist:\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://gateway.maton.ai/fathom/external/v1/meetings?cursor=eyJwYWdlX251bSI6Mn0=')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 26,
+    "root": 1,
+    "sibling node": 25,
+    "node_type": "reference",
+    "description": "## Code Examples",
+    "risk_type": []
+  },
+  {
+    "id": 27,
+    "root": 26,
+    "sibling node": -1,
+    "node_type": "example",
+    "description": "### JavaScript\n\n```javascript\nconst response = await fetch(\n  'https://gateway.maton.ai/fathom/external/v1/meetings?created_after=2025-01-01T00:00:00Z',\n  {\n    headers: {\n      'Authorization': `Bearer ${process.env.MATON_API_KEY}`\n    }\n  }\n);\nconst data = await response.json();\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 28,
+    "root": 26,
+    "sibling node": 27,
+    "node_type": "example",
+    "description": "### Python\n\n```python\nimport os\nimport requests\n\nresponse = requests.get(\n    'https://gateway.maton.ai/fathom/external/v1/meetings',\n    headers={'Authorization': f'Bearer {os.environ[\"MATON_API_KEY\"]}'},\n    params={'created_after': '2025-01-01T00:00:00Z'}\n)\ndata = response.json()\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 29,
+    "root": 1,
+    "sibling node": 26,
+    "node_type": "constraint and advice",
+    "description": "## Notes\n\n- Recording IDs are integers\n- Timestamps are in ISO 8601 format\n- Transcripts and summaries are in English\n- Webhook secrets are used to verify webhook signatures\n- CRM matches only return data from your or your team's linked CRM\n- IMPORTANT: When using curl commands, use `curl -g` when URLs contain brackets (`fields[]`, `sort[]`, `records[]`) to disable glob parsing\n- IMPORTANT: When piping curl output to `jq` or other commands, environment variables like `$MATON_API_KEY` may not expand correctly in some shell environments. You may get \"Invalid API key\" errors when piping.",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 30,
+    "root": 1,
+    "sibling node": 29,
+    "node_type": "constraint and advice",
+    "description": "## Error Handling\n\n| Status | Meaning |\n|--------|---------|\n| 400 | Bad request or missing Fathom connection |\n| 401 | Invalid or missing Maton API key |\n| 404 | Resource not found |\n| 429 | Rate limited |\n| 4xx/5xx | Passthrough error from Fathom API |",
+    "risk_type": []
+  },
+  {
+    "id": 31,
+    "root": 30,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "### Troubleshooting: API Key Issues\n\n1. Check that the `MATON_API_KEY` environment variable is set:\n\n```bash\necho $MATON_API_KEY\n```\n\n2. Verify the API key is valid by listing connections:\n\n```bash\npython <<'EOF'\nimport urllib.request, os, json\nreq = urllib.request.Request('https://ctrl.maton.ai/connections')\nreq.add_header('Authorization', f'Bearer {os.environ[\"MATON_API_KEY\"]}')\nprint(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))\nEOF\n```",
+    "risk_type": [
+      1,
+      4,
+      7
+    ]
+  },
+  {
+    "id": 32,
+    "root": 30,
+    "sibling node": 31,
+    "node_type": "constraint and advice",
+    "description": "### Troubleshooting: Invalid App Name\n\n1. Ensure your URL path starts with `fathom`. For example:\n\n- Correct: `https://gateway.maton.ai/fathom/external/v1/meetings`\n- Incorrect: `https://gateway.maton.ai/external/v1/meetings`",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 33,
+    "root": 1,
+    "sibling node": 30,
+    "node_type": "reference",
+    "description": "## Resources\n\n- [Fathom API Documentation](https://developers.fathom.ai)\n- [LLM Reference](https://developers.fathom.ai/llms.txt)\n- [Maton Community](https://discord.com/invite/dBfFAcefs2)\n- [Maton Support](mailto:support@maton.ai)",
+    "risk_type": [
+      4
+    ]
+  }
+]

@@ -1,0 +1,252 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ===================== 智能体中间表示 S-IR 定义 ===================== -->
+<h3 class="text-primary">智能体中间表示（S-IR）定义</h3>
+<div class="card mt-3 p-4 shadow-sm border-2 border-primary-subtle bg-white rounded-4">
+    <h5 class="text-primary-emphasis border-bottom pb-2 mb-3">
+        1. 基础元素定义
+    </h5>
+
+    <h6 class="mt-2 text-success fw-semibold">（1）变量域抽取规则</h6>
+    <p class="text-dark">变量分为 3 类，由 Agent 实时从运行上下文抽取，无需预定义：</p>
+    <ul class="list-group list-group-flush mb-3">
+        <li class="list-group-item bg-transparent">
+            <strong class="text-primary">V<sub>in</sub></strong>：输入变量 → 从当前工具入参中抽取
+        </li>
+        <li class="list-group-item bg-transparent">
+            <strong class="text-primary">V<sub>out</sub></strong>：输出变量 → 从工具返回结果中抽取
+        </li>
+        <li class="list-group-item bg-transparent">
+            <strong class="text-primary">V<sub>ctx</sub></strong>：全局上下文变量 → 环境信息抽取
+        </li>
+    </ul>
+
+    <p class="mt-2 text-success fw-semibold">抽取规则：</p>
+    <pre class="bg-light p-3 rounded border border-secondary-subtle shadow-sm mb-3">EXTRACT(var, source, description)</pre>
+
+    <h6 class="mt-4 text-success fw-semibold">（2）指令语法</h6>
+    <pre class="bg-light p-3 rounded border border-secondary-subtle shadow-sm mb-4">
+program    ::= stmt*
+stmt       ::= EXTRACT(var, source, desc)
+            | CALL(tool, input_vars)
+            | ASSERT(P_rule)
+            | IF(Q_rule) THEN SAT_BRANCH ELSE UNSAT_BRANCH
+            | JMP(label)
+            | LABEL(label)
+            | RETURN
+    </pre>
+
+    <h6 class="mt-2 text-success fw-semibold">（3）语义说明</h6>
+    <div class="p-3 bg-primary bg-opacity-10 rounded border border-primary-subtle">
+        <ul class="mb-0 ps-3">
+            <li><strong>EXTRACT</strong>：运行时抽取变量</li>
+            <li><strong>IF(Q_rule)</strong>：安全约束判断</li>
+            <li><strong>ELSE</strong>：风险触发 + 自动回滚</li>
+            <li>整体为 <strong>Agent 动态生成的安全执行代码</strong></li>
+        </ul>
+    </div>
+</div>
+
+<!-- ===================== 智能体中间表示流程图 ===================== -->
+<hr class="my-4">
+<h3 class="text-primary">智能体中间表示（S-IR）案例</h3>
+<div class="row mt-3">
+    {% for item in ir_list %}
+    <div class="col-md-6 mb-4">
+        <div class="card ir-card h-100 border-2" style="cursor:pointer; transition:0.3s;"
+             data-mermaid-wo="{{ item.mermaid_wo | escape }}"
+             data-mermaid="{{ item.mermaid | escape }}"
+             data-ircode="{{ item.ir_code | escape }}">
+            <div class="card-body text-center">
+                <h5 class="card-title text-primary-emphasis">{{ item.title }}</h5>
+                <p class="text-muted small">点击查看对比流程图</p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-warning">暂无中间表示数据</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 模态框：左右分屏对比流程图 -->
+<div class="modal fade" id="mermaidModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">智能体SIR流程图与形式化</h5>
+                <div>
+                    <button class="btn btn-sm btn-warning me-2" id="btnFormalize">Formalize</button>
+                    <button class="btn btn-sm btn-outline-primary me-1" id="zoomIn">➕ 放大</button>
+                    <button class="btn btn-sm btn-outline-primary me-1" id="zoomOut">➖ 缩小</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="resetView">🔄 复位</button>
+                    <button type="button" class="btn-close ms-2" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0" style="background:#f8f9fa;">
+                <div class="d-flex h-100" style="height: calc(100vh - 80px);">
+
+                    <!-- 左侧：未约束流程图 -->
+                    <div class="flex-grow-1 position-relative overflow-hidden border-end" style="width:50%;">
+                        <div id="zoomContainerLeft" class="w-100 h-100">
+                            <div id="dragWrapperLeft" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); cursor:grab;">
+                                <div id="mermaidContainerLeft" class="bg-white p-4 shadow-sm rounded"></div>
+                            </div>
+                        </div>
+                        <div class="position-absolute top-0 start-0 m-2 bg-white px-2 rounded border">未经过 SMT 约束</div>
+                    </div>
+
+                    <!-- 右侧：SMT约束后流程图 -->
+                    <div class="flex-grow-1 position-relative overflow-hidden" style="width:50%;">
+                        <div id="zoomContainerRight" class="w-100 h-100">
+                            <div id="dragWrapperRight" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); cursor:grab;">
+                                <div id="mermaidContainerRight" class="bg-white p-4 shadow-sm rounded"></div>
+                            </div>
+                        </div>
+                        <div class="position-absolute top-0 start-0 m-2 bg-white px-2 rounded border">经过 SMT 约束优化</div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- IR 代码弹窗 -->
+<div class="modal fade" id="irCodeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">中间表示（IR）代码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4" style="background:#f8f9fa;">
+                <pre id="irCodeContentInModal" style="font-size:14px; line-height:1.5; max-height:70vh; overflow-y:auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+// 左右独立状态
+let left = { scale:2.5, x:0, y:0, dragging:false, lastX:0, lastY:0 };
+let right= { scale:2.5, x:0, y:0, dragging:false, lastX:0, lastY:0 };
+
+const wrapL = document.getElementById('dragWrapperLeft');
+const wrapR = document.getElementById('dragWrapperRight');
+const contL = document.getElementById('zoomContainerLeft');
+const contR = document.getElementById('zoomContainerRight');
+const btnFormalize = document.getElementById('btnFormalize');
+
+function updateLeft() {
+    wrapL.style.transform = `translate(calc(-50% + ${left.x}px), calc(-50% + ${left.y}px)) scale(${left.scale})`;
+}
+function updateRight() {
+    wrapR.style.transform = `translate(calc(-50% + ${right.x}px), calc(-50% + ${right.y}px)) scale(${right.scale})`;
+}
+
+// 打开对比
+document.querySelectorAll('.ir-card').forEach(card => {
+    card.addEventListener('click', async function () {
+        const graphWo = this.dataset.mermaidWo;
+        const graph = this.dataset.mermaid;
+        const ircode = this.dataset.ircode;
+        window.currentIRCode = ircode;
+
+        document.getElementById('mermaidContainerLeft').innerHTML = '';
+        document.getElementById('mermaidContainerRight').innerHTML = '';
+
+        const uid = 'm' + Date.now();
+        const { svg:svgL } = await mermaid.render(uid+'L', graphWo);
+        const { svg:svgR } = await mermaid.render(uid+'R', graph);
+
+        document.getElementById('mermaidContainerLeft').innerHTML = svgL;
+        document.getElementById('mermaidContainerRight').innerHTML = svgR;
+
+        left = { scale:2.5, x:0, y:0, dragging:false, lastX:0, lastY:0 };
+        right= { scale:2.5, x:0, y:0, dragging:false, lastX:0, lastY:0 };
+        updateLeft(); updateRight();
+
+        new bootstrap.Modal(document.getElementById('mermaidModal')).show();
+    });
+});
+
+// 独立拖拽 - 左侧
+contL.addEventListener('mousedown', e => {
+    left.dragging = true;
+    left.lastX = e.clientX;
+    left.lastY = e.clientY;
+});
+// 独立拖拽 - 右侧
+contR.addEventListener('mousedown', e => {
+    right.dragging = true;
+    right.lastX = e.clientX;
+    right.lastY = e.clientY;
+});
+
+window.addEventListener('mousemove', e => {
+    if (left.dragging) {
+        left.x += e.clientX - left.lastX;
+        left.y += e.clientY - left.lastY;
+        left.lastX = e.clientX;
+        left.lastY = e.clientY;
+        updateLeft();
+    }
+    if (right.dragging) {
+        right.x += e.clientX - right.lastX;
+        right.y += e.clientY - right.lastY;
+        right.lastX = e.clientX;
+        right.lastY = e.clientY;
+        updateRight();
+    }
+});
+window.addEventListener('mouseup', () => {
+    left.dragging = false;
+    right.dragging = false;
+});
+
+// 独立滚轮缩放
+contL.addEventListener('wheel', e => {
+    e.preventDefault();
+    left.scale *= e.deltaY < 0 ? 1.1 : 0.9;
+    updateLeft();
+});
+contR.addEventListener('wheel', e => {
+    e.preventDefault();
+    right.scale *= e.deltaY < 0 ? 1.1 : 0.9;
+    updateRight();
+});
+
+// 按钮控制当前鼠标所在的图
+let lastOver = 'left';
+contL.addEventListener('mouseenter', () => lastOver = 'left');
+contR.addEventListener('mouseenter', () => lastOver = 'right');
+
+document.getElementById('zoomIn').onclick = () => {
+    if (lastOver === 'left') { left.scale *= 1.2; updateLeft(); }
+    else { right.scale *= 1.2; updateRight(); }
+};
+document.getElementById('zoomOut').onclick = () => {
+    if (lastOver === 'left') { left.scale /= 1.2; updateLeft(); }
+    else { right.scale /= 1.2; updateRight(); }
+};
+document.getElementById('resetView').onclick = () => {
+    if (lastOver === 'left') { left.scale = 2.5; left.x=0; left.y=0; updateLeft(); }
+    else { right.scale = 2.5; right.x=0; right.y=0; updateRight(); }
+};
+
+// IR 弹窗
+btnFormalize.addEventListener('click', () => {
+    document.getElementById('irCodeContentInModal').textContent = window.currentIRCode;
+    new bootstrap.Modal(document.getElementById('irCodeModal')).show();
+});
+</script>
+
+{% endblock %}

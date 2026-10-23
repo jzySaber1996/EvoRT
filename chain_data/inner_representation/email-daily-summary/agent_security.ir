@@ -1,0 +1,194 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+EXTRACT(trigger_type, input, "提取触发方式：手动/定时")
+EXTRACT(mail_account, input, "提取登录邮箱账号")
+EXTRACT(mail_pwd, input, "提取邮箱登录密码")
+EXTRACT(ai_switch_flag, input, "提取AI摘要功能开关状态")
+EXTRACT(schedule_switch, input, "提取定时任务启用标记")
+EXTRACT(store_dir, input, "提取截图与报告存储目录")
+
+EXTRACT(session_reuse_state, output, "浏览器会话复用校验结果")
+EXTRACT(cred_input_valid, output, "账号密码输入合法性校验结果")
+EXTRACT(page_dom_health, output, "页面DOM元素索引有效性")
+EXTRACT(raw_mail_dataset, output, "DOM解析得到的邮件原始数据")
+EXTRACT(save_path_valid, output, "截图存储路径合规判定")
+EXTRACT(script_param_safe, output, "执行脚本参数安全校验结果")
+EXTRACT(api_key_norm, output, "AI接口密钥合法性校验状态")
+EXTRACT(store_permission_ok, output, "本地存储目录权限检测结果")
+EXTRACT(schedule_auth_state, output, "定时任务执行权限校验结果")
+EXTRACT(session_close_result, output, "浏览器会话关闭执行状态")
+
+EXTRACT(browser_secure_config, context, "真实浏览器安全运行配置")
+EXTRACT(cred_protect_rule, context, "账号凭证脱敏存储规则")
+EXTRACT(dom_parse_boundary, context, "邮件DOM合法解析边界范围")
+EXTRACT(local_file_white_dir, context, "本地安全存储目录白名单")
+EXTRACT(third_api_security, context, "第三方AI接口数据传输约束")
+EXTRACT(schedule_policy, context, "定时任务最小权限执行策略")
+EXTRACT(session_isolate_rule, context, "浏览器会话隔离防护机制")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 启动浏览器会话
+CALL(BrowserLaunch, {browser_secure_config})
+ASSERT("浏览器以安全实机模式启动，无恶意插件加载" ∧ BrowserEnvSafe)
+EXTRACT(has_exist_session, output, "存在可用旧会话标记")
+IF(has_exist_session = True)
+    THEN LABEL(L1_REUSE); JMP(L_SESSION_VERIFY)
+    ELSE LABEL(L1_NEW); JMP(L_CRED_INPUT)
+LABEL(L1_REUSE)
+LABEL(L1_NEW)
+
+// 2. 验证已有会话有效性
+LABEL(L_SESSION_VERIFY)
+CALL(SessionValidCheck, {session_isolate_rule})
+ASSERT("会话身份可信，无篡改劫持特征" ∧ SessionIdentityValid)
+EXTRACT(session_available, output, "会话有效判定结果")
+IF(session_available = True)
+    THEN LABEL(L2_SAT); JMP(L_PAGE_STATE_DETECT)
+    ELSE LABEL(L2_UNSAT); JMP(L_CRED_INPUT)
+LABEL(L2_SAT)
+
+// 3. 账号密码录入登录
+LABEL(L_CRED_INPUT)
+CALL(CredentialInput, {mail_account, mail_pwd, cred_protect_rule})
+ASSERT("凭证禁止明文落地留存，屏蔽日志打印账号密码" ∧ NoPlaintextCredRecord)
+EXTRACT(cred_normal, output, "输入内容无篡改异常")
+IF(cred_normal = True)
+    THEN LABEL(L3_SAT); JMP(L_PAGE_STATE_DETECT)
+    ELSE LABEL(L3_UNSAT); JMP(L_RISK_CRED_LEAK)
+LABEL(L3_SAT)
+
+// 4. 页面状态与元素检测
+LABEL(L_PAGE_STATE_DETECT)
+CALL(PageStateCheck, {dom_parse_boundary})
+ASSERT("校验DOM结构真实合法，拦截伪造恶意页面节点" ∧ GenuineDomElement)
+EXTRACT(dom_index_normal, output, "元素索引正常标记")
+IF(dom_index_normal = True)
+    THEN LABEL(L4_SAT); JMP(L_MAIL_DATA_PARSE)
+    ELSE LABEL(L4_UNSAT); JMP(L_RISK_OPERATE_MISLEAD)
+LABEL(L4_SAT)
+
+// 5. 解析提取邮件数据
+LABEL(L_MAIL_DATA_PARSE)
+CALL(EmailDataExtraction, {raw_mail_dataset})
+ASSERT("严格限定解析范围，禁止超边界抓取私密邮件内容" ∧ ExtractRangeConstrained)
+EXTRACT(parse_logic_safe, output, "解析逻辑无篡改异常")
+IF(parse_logic_safe = True)
+    THEN LABEL(L5_SAT); JMP(L_SCREENSHOT_SAVE)
+    ELSE LABEL(L5_UNSAT); JMP(L_RISK_OVER_EXTRACT)
+LABEL(L5_SAT)
+
+// 6. 邮件截图保存
+LABEL(L_SCREENSHOT_SAVE)
+CALL(ScreenshotSave, {store_dir, local_file_white_dir})
+ASSERT("仅写入白名单目录，禁止覆盖系统与已有关键文件" ∧ SavePathIsLegal)
+EXTRACT(path_safe_flag, output, "存储路径合规结果")
+IF(path_safe_flag = True)
+    THEN LABEL(L6_SAT); JMP(L_SUMMARY_GEN)
+    ELSE LABEL(L6_UNSAT); JMP(L_RISK_SCREENSHOT_LEAK)
+LABEL(L6_SAT)
+
+// 7. 生成邮件总结报告
+LABEL(L_SUMMARY_GEN)
+CALL(SummaryGeneration, {raw_mail_dataset})
+ASSERT("过滤非法脚本字段，阻断注入类恶意参数" ∧ ScriptParamFiltered)
+EXTRACT(param_inject_risk, output, "脚本注入风险判定")
+IF(param_inject_risk = False)
+    THEN LABEL(L7_SAT); JMP(L_AI_SWITCH_JUDGE)
+    ELSE LABEL(L7_UNSAT); JMP(L_RISK_SCRIPT_EXEC)
+LABEL(L7_SAT)
+
+// 8. AI摘要开关分支判断
+LABEL(L_AI_SWITCH_JUDGE)
+IF(ai_switch_flag = True)
+    THEN LABEL(L_AI_ON); JMP(L_CALL_AI_SUMMARY)
+    ELSE LABEL(L_AI_OFF); JMP(L_DATA_STORE)
+LABEL(L_AI_ON)
+LABEL(L_AI_OFF)
+
+// 9. 调用第三方AI摘要接口
+LABEL(L_CALL_AI_SUMMARY)
+CALL(AISummary, {raw_mail_dataset, third_api_security})
+ASSERT("脱敏后传输数据，禁止完整敏感邮件外发" ∧ SensitiveDataMasked)
+EXTRACT(api_access_safe, output, "密钥与调用指令无篡改泄露")
+IF(api_access_safe = True)
+    THEN LABEL(L8_SAT); JMP(L_DATA_STORE)
+    ELSE LABEL(L8_UNSAT); JMP(L_RISK_THIRD_DATA_LEAK)
+LABEL(L8_SAT)
+
+// 10. 数据本地持久化存储
+LABEL(L_DATA_STORE)
+CALL(DataPersistence, {store_dir})
+ASSERT("目录访问权限收敛，禁止匿名全局可读" ∧ LocalDirPermissionRestrict)
+EXTRACT(store_auth_valid, output, "存储权限合规标记")
+IF(store_auth_valid = True)
+    THEN LABEL(L9_SAT); JMP(L_SCHEDULE_JUDGE)
+    ELSE LABEL(L9_UNSAT); JMP(L_RISK_LOCAL_DATA_LEAK)
+LABEL(L9_SAT)
+
+// 11. 定时任务开关分支
+LABEL(L_SCHEDULE_JUDGE)
+IF(schedule_switch = True)
+    THEN LABEL(L_SCHEDULE_ON); JMP(L_RUN_SCHEDULE_TASK)
+    ELSE LABEL(L_SCHEDULE_OFF); JMP(L_SESSION_CLOSE)
+LABEL(L_SCHEDULE_ON)
+LABEL(L_SCHEDULE_OFF)
+
+// 12. 执行定时调度脚本
+LABEL(L_RUN_SCHEDULE_TASK)
+CALL(ScheduledTask, {schedule_policy})
+ASSERT("定时进程权限最小化，禁止篡改启动路径" ∧ SchedulePrivilegeControlled)
+EXTRACT(schedule_run_safe, output, "定时执行无越权异常")
+IF(schedule_run_safe = True)
+    THEN LABEL(L10_SAT); JMP(main_start)
+    ELSE LABEL(L10_UNSAT); JMP(L_RISK_SCHEDULE_ESCALATE)
+LABEL(L10_SAT)
+
+// 13. 关闭浏览器会话
+LABEL(L_SESSION_CLOSE)
+CALL(SessionManagement, {session_isolate_rule})
+ASSERT("强制销毁会话上下文，杜绝残留劫持入口" ∧ SessionCompletelyDestroy)
+EXTRACT(close_finish, output, "会话正常关闭标记")
+IF(close_finish = True)
+    THEN LABEL(L11_SAT); JMP(L_TASK_FINISH)
+    ELSE LABEL(L11_UNSAT); JMP(L_RISK_SESSION_HIJACK)
+LABEL(L11_SAT)
+
+// ========== 各级风险分支跳转 ==========
+LABEL(L_RISK_CRED_LEAK)
+RETURN "一级风险：账号凭证明文泄露"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_OPERATE_MISLEAD)
+RETURN "一级风险：恶意DOM诱导操作偏离"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_OVER_EXTRACT)
+RETURN "二级风险：邮件敏感数据超限提取"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_SCREENSHOT_LEAK)
+RETURN "二级风险：截图文件泄露与覆盖破坏"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_SCRIPT_EXEC)
+RETURN "三级风险：恶意脚本注入命令执行"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_THIRD_DATA_LEAK)
+RETURN "三级风险：密钥泄露+敏感数据外发"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_LOCAL_DATA_LEAK)
+RETURN "二级风险：本地存储邮件数据泄露"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_SCHEDULE_ESCALATE)
+RETURN "四级风险：定时任务越权持久作恶"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_SESSION_HIJACK)
+RETURN "四级风险：会话劫持非法访问邮箱"; JMP(L_RISK_ROLLBACK)
+
+// ========== 全局风险回滚 ==========
+LABEL(L_RISK_ROLLBACK)
+CALL(KillBrowserProcess, "强制销毁异常浏览器进程")
+CALL(CleanTempCache, "清理解析截图临时缓存")
+CALL(InvalidateLocalSession, "作废不安全登录会话")
+JMP(main_start)
+
+// ========== 任务正常结束 ==========
+LABEL(L_TASK_FINISH)
+RETURN "邮件总结采集任务执行完成"

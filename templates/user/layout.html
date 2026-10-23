@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用户控制台</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar bg-dark navbar-dark px-4">
+        <div class="container">
+            <h5 class="text-white">用户控制台</h5>
+            <a href="/logout" class="btn btn-sm btn-outline-light">退出</a>
+        </div>
+    </nav>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="list-group">
+                    <a href="/user/dashboard" class="list-group-item">首页</a>
+                    <a href="/user/dynamic" class="list-group-item">动态安全监管</a>
+                    <a href="/user/code_runtime" class="list-group-item">代码运行时安全检查</a>
+                    <a href="/user/static" class="list-group-item">最优路径分析</a>
+                    <a href="/user/compare" class="list-group-item">效果对比</a>
+                </div>
+            </div>
+            <div class="col-md-9">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

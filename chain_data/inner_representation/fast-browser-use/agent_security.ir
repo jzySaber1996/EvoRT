@@ -1,0 +1,137 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+EXTRACT(target_url, input, "提取访问目标网址")
+EXTRACT(local_file_path, input, "提取本地文件读写路径")
+EXTRACT(session_save_path, input, "提取会话存储路径")
+EXTRACT(result_output_path, input, "提取采集结果输出路径")
+
+EXTRACT(login_exec_result, output, "账号登录执行结果标记")
+EXTRACT(url_legal_check, output, "目标URL合法性校验结果")
+EXTRACT(crawl_auth_state, output, "数据采集权限合规判定")
+EXTRACT(cache_op_type, output, "本地缓存操作类型：读取/修改")
+EXTRACT(output_file_check, output, "输出文件完整性与加密状态")
+EXTRACT(session_file_safe, output, "会话文件存储安全校验结果")
+EXTRACT(human_sim_trace, output, "人机模拟行为溯源检测状态")
+
+EXTRACT(url_blacklist_rule, context, "恶意网址拦截黑名单策略")
+EXTRACT(crawl_scope_policy, context, "合法采集边界与权限规范")
+EXTRACT(cred_protect_spec, context, "Cookie、Token敏感凭证防护规则")
+EXTRACT(file_secure_encrypt, context, "本地文件加密存储约束")
+EXTRACT(session_secure_spec, context, "会话文件防篡改安全规范")
+EXTRACT(anti_detect_strategy, context, "反检测行为模拟安全策略")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 登录操作分支
+CALL(login, {local_file_path})
+ASSERT("登录请求参数合规，无恶意账号口令注入" ∧ LoginParamSafe)
+EXTRACT(login_success, output, "登录结果判定")
+IF(login_success = True)
+    THEN LABEL(L1_LOGIN_OK); JMP(L_SAVE_SESSION)
+    ELSE LABEL(L1_LOGIN_FAIL); JMP(main_start)
+LABEL(L1_LOGIN_OK)
+
+// 2. 本地保存会话文件
+LABEL(L_SAVE_SESSION)
+CALL(SaveSessionFile, {session_save_path})
+ASSERT("会话存储遵循加密规范，禁止明文裸存" ∧ SessionNotPlainText)
+EXTRACT(session_file_status, output, "会话文件校验状态")
+IF(session_file_status = True)
+    THEN LABEL(L2_SESS_SAT); JMP(L_REUSE_SESS_NAV)
+    ELSE LABEL(L2_SESS_UNSAT); JMP(L_RISK_SESS_STEAL)
+LABEL(L2_SESS_SAT)
+
+// 会话明文/注入风险判定
+IF(SessionPlainExist(session_file_status))
+    THEN JMP(L_RISK_SESS_LEAK)
+ELSE IF(SessionInjected(session_file_status))
+    THEN JMP(L_RISK_MAL_SESS_ACCESS)
+
+// 3. 复用会话导航登录页面
+LABEL(L_REUSE_SESS_NAV)
+CALL(navigate, {target_url, session_save_path})
+ASSERT("会话复用身份合法，无伪造会话冒用行为" ∧ SessionReuseLegal)
+
+// 4. 直接导航访问分支
+CALL(navigate, {target_url})
+EXTRACT(url_valid_flag, output, "URL合法校验结果")
+IF(url_valid_flag = True)
+    THEN LABEL(L3_URL_SAT); JMP(L_DATA_COLLECT)
+    ELSE LABEL(L3_URL_UNSAT); JMP(L_RISK_MAL_URL_EXEC)
+LABEL(L3_URL_SAT)
+
+// 5. 网页数据采集操作
+LABEL(L_DATA_COLLECT)
+CALL(harvestSnapshotSitemap, {target_url, result_output_path})
+ASSERT("采集行为符合站点协议，不超限抓取私有数据" ∧ CrawlBehaviorCompliant)
+EXTRACT(crawl_compliance, output, "采集权限合规标记")
+IF(crawl_compliance = True)
+    THEN LABEL(L4_CRAWL_SAT); JMP(L_WRITE_RESULT_FILE)
+    ELSE LABEL(L4_CRAWL_UNSAT); JMP(L_RISK_ANITI_CRAWL_BLOCK)
+LABEL(L4_CRAWL_SAT)
+
+// 6. Cookie与本地存储操作
+LABEL(L_CACHE_OPERATE)
+CALL(CacheStorageOperate, {local_file_path})
+EXTRACT(op_read_modify, output, "区分读取/修改操作")
+IF(op_read_modify = "read")
+    THEN LABEL(L_CACHE_READ); JMP(L_RISK_CRED_EXPORT)
+ELSE IF(op_read_modify = "modify")
+    THEN LABEL(L_CACHE_MOD); JMP(L_RISK_COOKIE_INJECT)
+LABEL(L_CACHE_READ)
+LABEL(L_CACHE_MOD)
+
+// 7. 采集结果写入本地文件
+LABEL(L_WRITE_RESULT_FILE)
+CALL(OutputResultFile, {result_output_path})
+ASSERT("输出文件写入权限受控，禁止外部篡改覆盖" ∧ FileWriteIsolate)
+EXTRACT(file_secure_status, output, "文件加密与完整性校验")
+IF(FileUnEncrypted(file_secure_status))
+    THEN JMP(L_RISK_OUTPUT_DATA_LEAK)
+ELSE IF(FileTampered(file_secure_status))
+    THEN JMP(L_RISK_DOWNSTREAM_POISON)
+
+// 8. 人机行为模拟检测
+LABEL(L_HUMAN_SIMULATE)
+CALL(HumanEmulationEnable, {anti_detect_strategy})
+EXTRACT(behavior_detected, output, "行为被平台检测标记")
+IF(behavior_detected = True)
+    THEN JMP(L_RISK_IP_DEVICE_BAN)
+
+// ========== 风险分支处理 ==========
+LABEL(L_RISK_MAL_URL_EXEC)
+RETURN "恶意URL触发：代码执行、钓鱼攻击"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_ANITI_CRAWL_BLOCK)
+RETURN "违规采集触发：站点封禁、法律合规风险"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_CRED_EXPORT)
+RETURN "读取缓存触发：凭证泄露、越权访问风险"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_COOKIE_INJECT)
+RETURN "篡改缓存触发：页面逻辑篡改、数据窃取"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_OUTPUT_DATA_LEAK)
+RETURN "明文输出触发：敏感数据外泄风险"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_DOWNSTREAM_POISON)
+RETURN "文件篡改触发：恶意数据污染下游业务"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_SESS_LEAK)
+RETURN "明文会话触发：会话文件被盗取"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_MAL_SESS_ACCESS)
+RETURN "恶意会话触发：未授权页面非法访问"; JMP(L_RISK_ROLLBACK)
+
+LABEL(L_RISK_IP_DEVICE_BAN)
+RETURN "行为检测触发：IP设备封禁风险"; JMP(L_RISK_ROLLBACK)
+
+// ========== 全局风险回滚 ==========
+LABEL(L_RISK_ROLLBACK)
+CALL(CloseBrowserSession, "销毁当前浏览会话")
+CALL(CleanUnsafeCache, "清理恶意缓存与临时文件")
+CALL(InvalidateLocalSession, "作废风险会话凭证")
+JMP(main_start)
+
+// 正常任务收尾
+RETURN "网页浏览采集任务执行完成"

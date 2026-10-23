@@ -1,0 +1,17 @@
+# Optional dependencies for the ASB backend environment.
+#
+# Install this into the Python environment referenced by ASB_PYTHON, not
+# necessarily into the AgentSecuritySAT web environment.
+#
+# This file delegates to the sibling ASB repository used by asb_bridge.py.
+-r ../ASB/requirements.txt
+
+# Optional GPU/vLLM support for ASB:
+# -r ../ASB/requirements-cuda.txt
+
+# Optional ASB development tools:
+# -r ../ASB/requirements-dev.txt
+# Required when enabling --smt_guard_enabled in ASB.
+z3-solver==4.15.4.0
+requests>=2.31,<3.0
+agent-governance-toolkit[full]>=4.1.0,<5.0

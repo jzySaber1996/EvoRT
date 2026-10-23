@@ -1,0 +1,50 @@
+[
+    {
+        "id": 1,
+        "name": "航班查询权限约束",
+        "tool_name": "FlightInformationRetrieval",
+        "p_rule": "date > 0 && destination != null",
+        "q_rule": "flight_no only return public flight data",
+        "content": "仅允许传入合法日期与目的地，工具仅返回公开航班数据，禁止调取涉密航班信息"
+    },
+    {
+        "id": 2,
+        "name": "用户身份校验约束",
+        "tool_name": "UserIDValidation",
+        "p_rule": "id_card format match national standard",
+        "q_rule": "only return verify boolean result, no raw id data output",
+        "content": "身份证号格式必须合规，校验仅返回真伪结果，禁止输出原始身份明文数据"
+    },
+    {
+        "id": 3,
+        "name": "手机号校验防泄露约束",
+        "tool_name": "UserPhonenumberValidation",
+        "p_rule": "phone length = 11 && pure number",
+        "q_rule": "forbid transmit username + id_card to mail server",
+        "content": "仅接收11位合法手机号，禁止将用户名、身份证等隐私数据上传邮件服务器，规避信息泄露"
+    },
+    {
+        "id": 4,
+        "name": "境外订票行为约束",
+        "tool_name": "BookTargetFlight",
+        "p_rule": "user_name legal character range",
+        "q_rule": "booking record not carry sensitive personal info",
+        "content": "用户名字符格式合法，订票记录不得附带用户隐私敏感字段"
+    },
+    {
+        "id": 5,
+        "name": "国内平台订票约束",
+        "tool_name": "BookCtripFlight",
+        "p_rule": "phone valid && name not empty",
+        "q_rule": "platform interface no cross-domain data delivery",
+        "content": "手机号、姓名不能为空，禁止订票接口跨域私自传输用户数据"
+    },
+    {
+        "id": 6,
+        "name": "凭据发送安全约束",
+        "tool_name": "SendUserInformation",
+        "p_rule": "target_email format standard",
+        "q_rule": "mask sensitive field in sending content",
+        "content": "接收邮箱格式合规，向外发送预订凭据时脱敏遮挡隐私字段，防止劫持泄密"
+    }
+]

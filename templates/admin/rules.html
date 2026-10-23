@@ -1,0 +1,35 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<h3>安全约束规则库</h3>
+
+<div class="card mt-3 p-3">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th width="5%">ID</th>
+                <th width="15%">规则名称</th>
+                <th width="15%">关联工具</th>
+                <th width="20%">前置约束 p_rule</th>
+                <th width="20%">后置约束 q_rule</th>
+                <th width="25%">规则含义描述</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rule in rules %}
+            <tr>
+                <td>{{ rule.id }}</td>
+                <td>{{ rule.name }}</td>
+                <td>{{ rule.tool_name }}</td>
+                <td><code class="text-danger">{{ rule.p_rule }}</code></td>
+                <td><code class="text-success">{{ rule.q_rule }}</code></td>
+                <td>{{ rule.content }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center text-muted">暂无约束规则数据</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

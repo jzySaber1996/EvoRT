@@ -1,0 +1,12 @@
+graph TD
+    Z[用户输入：搜索关键词、--start参数 + DESEARCH_API_KEY] --> A[API Key格式校验]
+    A -->|格式非法| F[返回401前置错误：API Key格式无效]
+    A -->|格式合法| B[API Key鉴权（Desearch服务端校验）]
+    B -->|鉴权失败（无效/过期）| G[返回401错误：Invalid or missing API key]
+    B -->|鉴权成功| C[搜索参数校验（关键词/--start合法性）]
+    C -->|参数篡改（如--start为超大值/恶意值）| H[参数异常：请求放大/无效分页]
+    C -->|参数合法| D[发送搜索请求到Desearch API]
+    D -->|余额耗尽| I[返回402错误：Insufficient balance]
+    D -->|请求成功| E[解析SERP搜索结果]
+    E -->|结果含敏感信息| J[敏感信息泄露风险]
+    E -->|结果正常| K[返回结构化搜索结果]

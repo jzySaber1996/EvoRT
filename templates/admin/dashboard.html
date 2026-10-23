@@ -1,0 +1,12 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<h3>管理员控制台</h3>
+<p>欢迎使用全局管理智能体安全检查系统</p>
+<div class="list-group mt-3">
+    <a href="/admin/ir" class="list-group-item">中间表示</a>
+    <a href="/admin/rules" class="list-group-item">约束规则</a>
+    <a href="/admin/history" class="list-group-item">检测历史</a>
+    <a href="/admin/compare" class="list-group-item">效果对比</a>
+    <a href="/admin/optimize" class="list-group-item">系统优化</a>
+</div>
+{% endblock %}

@@ -1,0 +1,1652 @@
+{% extends "user/layout.html" %}
+{% block content %}
+<h3>运行时动态监管</h3>
+<div class="card mt-3 p-3">
+    <form id="monitor-form" class="mb-3">
+        <div class="mb-2">
+            <label for="agentType" class="form-label">选择智能体类型</label>
+            <select class="form-select" id="agentType" required>
+                <option value="Bench">ToolBench</option>
+                <option value="ASB">ASB攻击沙盒</option>
+            </select>
+        </div>
+        <div class="mb-2">
+            <label for="queryText" class="form-label">输入查询文本</label>
+            <input type="text" class="form-control" id="queryText" placeholder="如：输入个人用户名、手机号、邮箱等信息，帮忙订票" required>
+        </div>
+        <div id="bench-options">
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <label for="benchAgent" class="form-label">ToolBench智能体环境</label>
+                    <select class="form-select" id="benchAgent"></select>
+                </div>
+                <div class="col-md-4">
+                    <label for="benchQueryPreset" class="form-label">ToolBenchBench样本查询</label>
+                    <select class="form-select" id="benchQueryPreset"></select>
+                </div>
+                <div class="col-md-4">
+                    <label for="benchModel" class="form-label">Llama3模型</label>
+                    <select class="form-select" id="benchModel"></select>
+                </div>
+            </div>
+            <div class="form-text mt-2">ToolBench 直接调用 LLM_Tool_Learning 的真实查询集、工具链、SMT判定和回滚逻辑。</div>
+        </div>
+        <div id="asb-options" style="display:none; margin-top: 1rem;">
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label for="asbAgent" class="form-label">ASB智能体环境</label>
+                    <select class="form-select" id="asbAgent"></select>
+                </div>
+                <div class="col-md-6">
+                    <label for="asbTaskPreset" class="form-label">默认任务模板</label>
+                    <select class="form-select" id="asbTaskPreset"></select>
+                </div>
+                <div class="col-md-4">
+                    <label for="toolSet" class="form-label">攻击工具集合</label>
+                    <select class="form-select" id="toolSet">
+                        <option value="all" selected>all</option>
+                        <option value="test">test</option>
+                        <option value="agg">agg</option>
+                        <option value="non-agg">non-agg</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="attackTool" class="form-label">攻击工具</label>
+                    <select class="form-select" id="attackTool"></select>
+                </div>
+                <div class="col-md-4">
+                    <label for="attackType" class="form-label">ASB攻击类型</label>
+                    <select class="form-select" id="attackType">
+                        <option value="escape_characters">escape_characters</option>
+                        <option value="naive">naive</option>
+                        <option value="fake_completion">fake_completion</option>
+                        <option value="context_ignoring">context_ignoring</option>
+                        <option value="combined_attack">combined_attack</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="asbModel" class="form-label">基座模型</label>
+                    <select class="form-select" id="asbModel">
+                        <option value="ollama/llama3:8b">ollama/llama3:8b</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="form-check form-switch mt-3 mb-2">
+            <input class="form-check-input" type="checkbox" role="switch" id="smtGuardEnabled">
+            <label class="form-check-label" for="smtGuardEnabled">开始SMT防护</label>
+            <div class="form-text">启用后，每个工具调用都会生成风险约束并调用Z3求解；SAT表示存在风险取值，将触发回滚和替代工具选择。</div>
+        </div>
+        <div class="mb-3" id="smtMethodGroup">
+            <label for="smtMethod" class="form-label">SMT防护策略</label>
+            <select class="form-select" id="smtMethod">
+                <option value="template" selected>Template（模板化防护）</option>
+                <option value="hoare">Hoare（霍尔逻辑）</option>
+                <option value="ir_hoare">IR-Hoare（IR+字符串正则）</option>
+            </select>
+            <div class="form-text">Template 保留原先本地规则；Hoare 使用链式安全契约；IR-Hoare 基于 agent_security.ir 并使用 QF_SLIA 字符串/正则约束。</div>
+        </div>
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="deepseekRulesEnabled" disabled>
+            <label class="form-check-label" for="deepseekRulesEnabled">使用DeepSeek生成约束</label>
+            <div class="form-text">开启后，Template/Hoare 会追加 DeepSeek 风险规则；IR-Hoare 会先让 DeepSeek 基于被测工具调用和历史 IR 生成样本中间表示，再进行约束求解。</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary" id="startMonitor">开始实时监管</button>
+            <button type="button" class="btn btn-outline-danger" id="stopJobBtn" style="display:none;">停止后台任务</button>
+        </div>
+    </form>
+
+    <div id="runtime-summary" class="row g-2 mb-3" style="display:none;">
+        <div class="col-md-4">
+            <div class="border rounded p-2 bg-light">
+                <div class="text-muted small">已检查步骤</div>
+                <div class="fs-5 fw-bold" id="summary-steps">0</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="border rounded p-2 bg-light">
+                <div class="text-muted small">风险步骤</div>
+                <div class="fs-5 fw-bold text-danger" id="summary-risk">0</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="border rounded p-2 bg-light">
+                <div class="text-muted small" id="summary-third-label">安全约束(UNSAT)</div>
+                <div class="fs-5 fw-bold text-warning" id="summary-unsat">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="asb-live-panel" class="mt-4" style="display:none;">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0" id="live-panel-title">ToolBench实时反馈</h5>
+            <span class="badge bg-secondary" id="asb-live-model">-</span>
+        </div>
+        <pre class="detail-code" id="asb-live-log">等待后台输出...</pre>
+    </div>
+    <div id="monitor-steps" class="mt-4"></div>
+    <div id="chain-btn-area" class="mt-4" style="display:none;">
+        <button class="btn btn-success" id="showChainBtn">工具调用链路</button>
+    </div>
+    <div id="chain-tree-area" class="mt-4" style="display:none;">
+        <h5>工具调用链路可视化</h5>
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+            <div class="d-flex gap-3 flex-wrap small">
+                <span><span class="legend-dot bg-primary"></span>正常步骤</span>
+                <span><span class="legend-dot legend-dot-nonexec"></span>不可执行工具</span>
+                <span><span class="legend-dot bg-danger"></span>风险/SAT</span>
+                <span><span class="legend-dot bg-success"></span>回滚后安全分支</span>
+                <span><span class="legend-line"></span>路径回退点</span>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm tree-tool-btn" id="treeZoomToggle" title="开启滚轮缩放" aria-label="开启滚轮缩放" aria-pressed="false">&#9995;</button>
+        </div>
+        <div id="tree-container" style="width:100%; min-height:620px; height:820px; overflow:auto;"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="toolDetailModal" tabindex="-1" aria-labelledby="toolDetailModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="toolDetailModalLabel">工具调用详情</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+      </div>
+      <div class="modal-body" id="toolDetailBody"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+.code-snippet {
+    max-height: 210px;
+    overflow: auto;
+    background: #111827;
+    color: #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.detail-code {
+    max-height: 420px;
+    overflow: auto;
+    background: #111827;
+    color: #e5e7eb;
+    border-radius: 6px;
+    padding: 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.code-snippet code,
+.detail-code code,
+.modal-body pre,
+.table code {
+    white-space: inherit;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.table td code {
+    display: block;
+    max-width: 620px;
+    white-space: pre-wrap;
+}
+.legend-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: -1px;
+}
+.legend-line {
+    display: inline-block;
+    width: 26px;
+    border-top: 3px dashed #dc3545;
+    margin-right: 4px;
+    vertical-align: 3px;
+}
+.legend-dot-nonexec {
+    background: #f59e0b;
+}
+.step-card-nonexec {
+    border-left: 4px solid #f59e0b;
+    background: #fffaf0;
+}
+.step-card-risk {
+    border-left: 4px solid #dc3545;
+    background: #fff5f5;
+}
+.step-card-recovery {
+    border-left: 4px solid #198754;
+    background: #f3fbf6;
+}
+.tree-tool-btn {
+    width: 34px;
+    height: 30px;
+    padding: 0;
+    line-height: 1;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let chainHistory = [];
+let currentRuntimeJobId = null;
+let runtimePollingStopped = false;
+let treeZoomModeEnabled = false;
+let currentTreeZoomController = null;
+let currentTreeData = null;
+let treeSemanticZoom = 0.45;
+let asbOptions = {agents: [], tools_by_agent: {}, model_options: ['ollama/llama3:8b'], smt_guard: {z3_available: false}};
+let asbOptionsPromise = null;
+let benchOptions = {agents: [], model_options: ['llama3:8b'], runtime: {z3_available: false}};
+let benchOptionsPromise = null;
+const TREE_ZOOM_MIN = 0.45;
+const TREE_ZOOM_MAX = 3;
+const TREE_ZOOM_STEP = 1.14;
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function showModalCompat(modalEl) {
+    if (window.bootstrap && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        return;
+    }
+    modalEl.classList.add('show');
+    modalEl.style.display = 'block';
+    modalEl.removeAttribute('aria-hidden');
+    modalEl.setAttribute('aria-modal', 'true');
+    document.body.classList.add('modal-open');
+    let backdrop = document.getElementById('toolDetailModalFallbackBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'toolDetailModalFallbackBackdrop';
+        backdrop.className = 'modal-backdrop fade show';
+        document.body.appendChild(backdrop);
+    }
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function hideModalCompat(modalEl) {
+    if (window.bootstrap && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.hide();
+        return;
+    }
+    modalEl.classList.remove('show');
+    modalEl.style.display = 'none';
+    modalEl.setAttribute('aria-hidden', 'true');
+    modalEl.removeAttribute('aria-modal');
+    document.body.classList.remove('modal-open');
+    const backdrop = document.getElementById('toolDetailModalFallbackBackdrop');
+    if (backdrop) backdrop.remove();
+}
+
+document.addEventListener('click', function(event) {
+    const closeBtn = event.target.closest('[data-bs-dismiss="modal"]');
+    if (closeBtn) {
+        const modalEl = closeBtn.closest('.modal');
+        if (modalEl) hideModalCompat(modalEl);
+    }
+    if (event.target.classList && event.target.classList.contains('modal')) {
+        hideModalCompat(event.target);
+    }
+});
+
+function getRules(step) {
+    return step.sat || [];
+}
+
+function ruleFormula(rule) {
+    return rule.formula || rule.rule || '';
+}
+
+function hasSatRisk(step) {
+    const rules = getRules(step);
+    const satRisk = rules.some(item => item.result === 'SAT' && (item.solver_semantics === 'SAT_MEANS_RISK' || item.risk === true));
+    const legacyUnsatRisk = rules.some(item => item.result === 'UNSAT' && !(item.solver_semantics === 'SAT_MEANS_RISK' || item.risk !== undefined));
+    return satRisk || legacyUnsatRisk || String(step && step.check || '').includes('高风险');
+}
+
+function isNonExecutableStep(step) {
+    if (!step || !step.tool_call) return false;
+    if (hasSatRisk(step)) return false;
+    const check = String(step.check || '');
+    const output = step.output || {};
+    const code = output.observation_code;
+    if (check === '执行异常') return true;
+    if (code === null || code === undefined) return false;
+    return ![0, 3].includes(code);
+}
+
+function isRuntimeRollbackStep(step) {
+    return !!step && step.check === '回滚';
+}
+
+function stepVisualStatus(step) {
+    if (!step) return 'normal';
+    if (isRuntimeRollbackStep(step)) return 'rollback';
+    if (hasSatRisk(step)) return 'risk';
+    if (isNonExecutableStep(step)) return 'nonexec';
+    const path = step.path || {};
+    if (path.event === 'rollback_recovery' || path.recovered_from_risk || path.recovery_branch) return 'recovery';
+    return 'normal';
+}
+
+function badgeClass(check, step = null) {
+    if (step && stepVisualStatus(step) === 'risk') return 'bg-danger';
+    if (step && stepVisualStatus(step) === 'nonexec') return 'bg-warning text-dark';
+    if (check === '回滚') return 'bg-warning text-dark';
+    return 'bg-success';
+}
+
+function constraintSummary(step) {
+    if (step.source === 'ASB' || step.source === 'BENCH') {
+        const path = step.path || {};
+        if (step.smt_guard && step.smt_guard.enabled) {
+            const rules = getRules(step);
+            const result = rules[0] && rules[0].result ? rules[0].result : 'UNKNOWN';
+            return result === 'SAT' ? 'Z3: SAT，风险条件可满足，触发回滚' : `Z3: ${result}，风险条件不可满足或未命中`;
+        }
+        if (step.tool_call) {
+            return path.rollback_target ? `实际工具调用；风险路径可回到第 ${path.rollback_to_index} 步 ${path.rollback_target}` : '实际工具调用；未启用SMT防护';
+        }
+        return `${step.source}执行路径事件`;
+    }
+    const rules = getRules(step);
+    const riskSemantics = rules.some(item => item.solver_semantics === 'SAT_MEANS_RISK' || item.risk !== undefined);
+    const sat = rules.filter(item => item.result === 'SAT').length;
+    const unsat = rules.filter(item => item.result === 'UNSAT').length;
+    if (rules.length === 0) return '无约束求解项';
+    if (riskSemantics) return `${rules.length} 条 SMT 约束，${sat} 条 SAT 风险，${unsat} 条 UNSAT 安全`;
+    return `${rules.length} 条 SMT 约束，${sat} 条 SAT 通过，${unsat} 条 UNSAT 冲突`;
+}
+
+function shortText(value, maxLength = 420) {
+    const text = String(value ?? '');
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function toolCallPreview(step) {
+    if (!step.tool_call) return '';
+    const input = step.input || {};
+    const output = step.output || {};
+    const available = (input.available_tools || []).map(item => item.name).filter(Boolean).join(', ') || '-';
+    return `目标：${escapeHtml(shortText(input.step_goal || step.desc, 180))}
+注入目标工具：${escapeHtml(input.injected_target_tool || input.attack_tool || '-')}
+可用工具：${escapeHtml(shortText(available, 180))}
+实际调用工具：${escapeHtml(output.actual_called_tool || output.called_tool || step.tool)}
+参数：${escapeHtml(shortText(output.parameters || 'None', 160))}
+工具反馈：${escapeHtml(shortText(output.observation || '-', 320))}`;
+}
+
+function smtSymbol(value) {
+    const symbol = String(value ?? 'Tool').replace(/[^A-Za-z0-9_]/g, '_');
+    return symbol || 'Tool';
+}
+
+function smtFormulaText(step) {
+    const rules = getRules(step);
+    if (rules.length > 0) {
+        return rules.map(rule => ruleFormula(rule) || JSON.stringify(rule, null, 2)).join('\n\n');
+    }
+    if (step.source === 'ASB' || step.source === 'BENCH') {
+        const input = step.input || {};
+        const output = step.output || {};
+        const toolName = output.called_tool || step.tool || 'Tool';
+        const method = currentSmtMethod();
+        const logic = method === 'ir_hoare' ? 'QF_SLIA' : 'QF_UF';
+        return [
+            ';; SMT公式展示位：当前步骤未返回SMT求解结果',
+            ';; 开启“开始SMT防护”后，后端会返回真实Z3公式和求解结果',
+            `(set-logic ${logic})`,
+            `(declare-const call_${smtSymbol(toolName)} Bool)`,
+            method === 'ir_hoare' ? '(declare-const query_text String)' : '(declare-const attacker_tool_selected Bool)',
+            method === 'ir_hoare' ? '(declare-const output_text String)' : '(declare-const unsafe_tool_called Bool)',
+            `;; step: ${input.step || '-'}`,
+            `;; actual_tool: ${toolName}`,
+            `;; attack_tool: ${input.attack_tool || '-'}`,
+            ';; check-sat is intentionally not executed in the current ASB path-only mode'
+        ].join('\n');
+    }
+    return '无 SMT 约束';
+}
+
+function updateSummary() {
+    const isRuntimeHistory = chainHistory.some(step => step.source === 'ASB' || step.source === 'BENCH');
+    const riskCount = chainHistory.filter(step => stepVisualStatus(step) === 'risk').length;
+    const safeUnsatCount = chainHistory.reduce((total, step) => {
+        return total + getRules(step).filter(item => item.result === 'UNSAT').length;
+    }, 0);
+    const rollbackCount = chainHistory.filter(step => step.path && step.path.rollback_target).length;
+    document.getElementById('runtime-summary').style.display = '';
+    document.getElementById('summary-steps').textContent = chainHistory.length;
+    document.getElementById('summary-risk').textContent = riskCount;
+    const smtEnabled = document.getElementById('smtGuardEnabled').checked || chainHistory.some(step => step.smt_guard && step.smt_guard.enabled);
+    document.getElementById('summary-third-label').textContent = smtEnabled ? '安全约束(UNSAT)' : (isRuntimeHistory ? '路径回退点' : 'UNSAT 约束');
+    document.getElementById('summary-unsat').textContent = smtEnabled ? safeUnsatCount : (isRuntimeHistory ? rollbackCount : safeUnsatCount);
+}
+
+function printStep(step, idx) {
+    const cardId = `step-card-${idx}`;
+    const visualStatus = stepVisualStatus(step);
+    let extraCardClass = '';
+    if (visualStatus === 'nonexec') extraCardClass = ' step-card-nonexec';
+    if (visualStatus === 'risk') extraCardClass = ' step-card-risk';
+    if (visualStatus === 'recovery') extraCardClass = ' step-card-recovery';
+    const formulaPreview = escapeHtml(smtFormulaText(step).split('\n').slice(0, 8).join('\n'));
+    const previewHtml = step.tool_call ? `
+                    <div class="mt-2 small text-muted">工具调用细节</div>
+                    <pre class="code-snippet mt-2 mb-0"><code>${toolCallPreview(step)}</code></pre>
+    ` : `<pre class="code-snippet mt-2 mb-0"><code>${formulaPreview}</code></pre>`;
+    const stepHtml = `
+    <div class="card mb-3 step-card${extraCardClass}" id="${cardId}" style="cursor:pointer;" data-idx="${idx}">
+        <div class="card-body">
+            <div class="d-flex align-items-start gap-2 flex-wrap">
+                <span class="badge bg-secondary">${idx + 1}</span>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <strong>${escapeHtml(step.tool)}</strong>
+                        <span class="text-muted small">${escapeHtml(step.agent || 'RuntimeMonitor')}</span>
+                        <span class="badge ${badgeClass(step.check, step)} ms-auto">${escapeHtml(step.check)}</span>
+                    </div>
+                    <div class="mt-1">${escapeHtml(step.desc)}</div>
+                    <div class="mt-2 small text-muted">${constraintSummary(step)}</div>
+                    ${previewHtml}
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+    document.getElementById('monitor-steps').insertAdjacentHTML('beforeend', stepHtml);
+    setTimeout(() => {
+        document.getElementById(cardId).onclick = function() {
+            showToolDetail(step);
+        };
+    }, 100);
+}
+
+function showToolDetail(step) {
+    const input = step.input || {};
+    const output = step.output || {};
+    const path = step.path || {};
+    const availableTools = input.available_tools || [];
+    const toolDetailText = JSON.stringify({
+        step_goal: input.step_goal,
+        injected_target_tool: input.injected_target_tool || input.attack_tool,
+        available_tools: availableTools,
+        actual_called_tool: output.actual_called_tool || output.called_tool || step.tool,
+        parameters: output.parameters,
+        action: output.action,
+        observation: output.observation,
+        path: path
+    }, null, 2);
+    let html = `
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div><strong>监控对象：</strong>${escapeHtml(step.agent || 'RuntimeMonitor')}</div>
+                <div class="mt-2"><strong>工具名称：</strong>${escapeHtml(step.tool)}</div>
+                <div class="mt-2"><strong>检查结果：</strong><span class="badge ${badgeClass(step.check, step)}">${escapeHtml(step.check)}</span></div>
+                <div class="mt-3"><strong>输入参数：</strong><pre class="detail-code">${escapeHtml(JSON.stringify(input, null, 2))}</pre></div>
+                <div class="mt-3"><strong>输出结果：</strong><pre class="detail-code">${escapeHtml(JSON.stringify(output, null, 2))}</pre></div>
+            </div>
+            <div class="col-md-6">
+                <strong>${step.source === 'ASB' || step.source === 'BENCH' ? '工具调用细节' : '运行时公式'}：</strong>
+                <pre class="detail-code mt-2"><code>${escapeHtml(step.source === 'ASB' || step.source === 'BENCH' ? toolDetailText : smtFormulaText(step))}</code></pre>
+            </div>
+        </div>
+    `;
+
+    const rules = getRules(step);
+    if (rules.length > 0) {
+        html += `<div class="mt-3"><strong>约束求解结果：</strong><div class="table-responsive mt-2"><table class="table table-sm table-bordered align-middle"><thead><tr><th>规则</th><th>公式</th><th>结果</th><th>证据</th></tr></thead><tbody>`;
+        rules.forEach((rule, index) => {
+            const result = rule.result || 'PENDING';
+            const riskSemantics = rule.solver_semantics === 'SAT_MEANS_RISK' || rule.risk !== undefined;
+            const badge = riskSemantics
+                ? (result === 'SAT' ? 'bg-danger' : (result === 'UNSAT' ? 'bg-success' : 'bg-secondary'))
+                : (result === 'SAT' ? 'bg-success' : (result === 'UNSAT' ? 'bg-danger' : 'bg-secondary'));
+            html += `<tr>
+                <td>${escapeHtml(rule.id || `R${index + 1}`)}</td>
+                <td><code>${escapeHtml(ruleFormula(rule))}</code></td>
+                <td><span class="badge ${badge}">${escapeHtml(result)}</span></td>
+                <td>${escapeHtml(rule.evidence || '-')}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+    } else if (step.source === 'ASB' || step.source === 'BENCH') {
+        html += `<div class="mt-3"><strong>约束求解结果：</strong><div class="table-responsive mt-2"><table class="table table-sm table-bordered align-middle"><thead><tr><th>规则</th><th>公式</th><th>结果</th><th>证据</th></tr></thead><tbody><tr>
+            <td>SMT-PENDING</td>
+            <td><code>${escapeHtml(smtFormulaText(step))}</code></td>
+            <td><span class="badge bg-secondary">PENDING</span></td>
+            <td>该步骤未启用SMT防护或未返回求解结果。</td>
+        </tr></tbody></table></div></div>`;
+    }
+
+    document.getElementById('toolDetailBody').innerHTML = html;
+    showModalCompat(document.getElementById('toolDetailModal'));
+}
+
+function buildChainTree(history) {
+    let root = null;
+    let cur = null;
+    let lastSafeNode = null;
+    let lastRiskNode = null;
+    let recoveryMode = false;
+    const nodesByTool = new Map();
+    const rollbackLinks = [];
+
+    function rememberNode(step, node) {
+        if (!nodesByTool.has(step.tool)) {
+            nodesByTool.set(step.tool, []);
+        }
+        nodesByTool.get(step.tool).push(node);
+    }
+
+    function findLastNodeByTool(toolName) {
+        const nodes = nodesByTool.get(toolName);
+        return nodes && nodes.length > 0 ? nodes[nodes.length - 1] : null;
+    }
+
+    history.forEach((step, i) => {
+        const visualStatus = stepVisualStatus(step);
+
+        if (visualStatus === 'rollback') {
+            const rollbackTargetTool = step.input && step.input.rollbackTo;
+            const targetNode = findLastNodeByTool(rollbackTargetTool) || lastSafeNode;
+            if (targetNode) {
+                rollbackLinks.push({
+                    fromStepIndex: lastRiskNode ? lastRiskNode.stepIndex : (cur && cur.stepIndex),
+                    toStepIndex: targetNode.stepIndex,
+                    rollbackStepIndex: i
+                });
+                cur = targetNode;
+                lastSafeNode = targetNode;
+                recoveryMode = true;
+                lastRiskNode = null;
+            }
+            return;
+        }
+
+        const parentNode = (visualStatus === 'normal' || visualStatus === 'recovery')
+            ? (recoveryMode ? (lastSafeNode || cur) : (cur || lastSafeNode))
+            : (cur || lastSafeNode);
+        const nodeStatus = visualStatus === 'normal' && recoveryMode ? 'recovery' : visualStatus;
+        const node = {
+            name: step.tool,
+            stepIndex: i,
+            status: nodeStatus,
+            children: []
+        };
+
+        if (!root) {
+            root = node;
+        } else if (parentNode) {
+            parentNode.children.push(node);
+        }
+
+        rememberNode(step, node);
+
+        if (nodeStatus === 'risk') {
+            lastRiskNode = node;
+            cur = node;
+            recoveryMode = false;
+            return;
+        }
+
+        if (nodeStatus === 'nonexec') {
+            cur = lastSafeNode || cur || node;
+            return;
+        }
+
+        cur = node;
+        lastSafeNode = node;
+        lastRiskNode = null;
+    });
+
+    return { root, rollbackLinks };
+}
+
+function treeColorByStatus(status) {
+    if (status === 'risk') return '#dc3545';
+    if (status === 'nonexec') return '#f59e0b';
+    if (status === 'recovery') return '#198754';
+    return '#0d6efd';
+}
+
+function analyzeTreeShape(rootNode) {
+    if (!rootNode) return {leafCount: 1, maxDepth: 0, nodeCount: 0};
+    let leafCount = 0;
+    let maxDepth = 0;
+    let nodeCount = 0;
+
+    function visit(node, depth) {
+        nodeCount += 1;
+        maxDepth = Math.max(maxDepth, depth);
+        const children = node.children || [];
+        if (children.length === 0) {
+            leafCount += 1;
+            return;
+        }
+        children.forEach(child => visit(child, depth + 1));
+    }
+
+    visit(rootNode, 0);
+    return {
+        leafCount: Math.max(1, leafCount),
+        maxDepth,
+        nodeCount,
+    };
+}
+
+function buildTreeRenderOptions(rootNode) {
+    const stats = analyzeTreeShape(rootNode);
+    const zoom = clamp(treeSemanticZoom, TREE_ZOOM_MIN, TREE_ZOOM_MAX);
+    const spread = (zoom - TREE_ZOOM_MIN) / (TREE_ZOOM_MAX - TREE_ZOOM_MIN);
+    const leafGap = Math.round(56 + spread * 144);
+    const depthGap = Math.round(82 + spread * 234);
+    const radius = Math.round(13 + spread * 10);
+    const labelLineHeight = Math.round(11 + spread * 12);
+    const labelFontSize = Math.round(10 + spread * 8);
+    const indexFontSize = Math.round(9 + spread * 5);
+    const labelMaxChars = Math.max(9, Math.round(12 + spread * 10));
+    const topPadding = Math.round(48 + spread * 102);
+    const bottomPadding = Math.round(58 + spread * 138);
+    const sidePadding = Math.round(58 + spread * 142);
+    const width = Math.max(900, sidePadding * 2 + Math.max(1, stats.leafCount - 1) * leafGap + 180);
+    const height = Math.max(560, topPadding + bottomPadding + Math.max(1, stats.maxDepth) * depthGap + 150);
+    return {
+        stats,
+        zoom,
+        spread,
+        leafGap,
+        depthGap,
+        radius,
+        labelLineHeight,
+        labelFontSize,
+        indexFontSize,
+        labelMaxChars,
+        topPadding,
+        bottomPadding,
+        sidePadding,
+        width,
+        height,
+        rollbackSideOffset: Math.round(62 + spread * 62),
+        rollbackLift: Math.round(34 + spread * 60),
+    };
+}
+
+function wrapTreeLabel(text, maxChars) {
+    const normalized = String(text || 'Tool')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_]+/g, ' ')
+        .replace(/[\/]+/g, ' / ')
+        .replace(/[:]+/g, ': ');
+    const rawTokens = normalized.trim().split(/\s+/).filter(Boolean);
+    const tokens = [];
+    rawTokens.forEach(token => {
+        if (token.length <= maxChars) {
+            tokens.push(token);
+            return;
+        }
+        for (let start = 0; start < token.length; start += maxChars) {
+            tokens.push(token.slice(start, start + maxChars));
+        }
+    });
+    if (tokens.length === 0) return ['Tool'];
+
+    const lines = [];
+    let current = '';
+    tokens.forEach(token => {
+        const candidate = current ? `${current} ${token}` : token;
+        if (candidate.length <= maxChars) {
+            current = candidate;
+            return;
+        }
+        if (current) lines.push(current);
+        current = token;
+    });
+    if (current) lines.push(current);
+    return lines.slice(0, 4);
+}
+
+function appendMultilineSvgText(parent, lines, config, isAbove) {
+    const textEl = svgEl('text', {
+        'text-anchor': 'middle',
+        'font-weight': 'bold',
+        'font-size': config.labelFontSize
+    });
+    const startY = isAbove
+        ? -(config.radius + 14 + (lines.length - 1) * config.labelLineHeight)
+        : (config.radius + 18);
+    lines.forEach((line, index) => {
+        const tspan = svgEl('tspan', {
+            x: 0,
+            y: startY + index * config.labelLineHeight
+        });
+        tspan.textContent = line;
+        textEl.appendChild(tspan);
+    });
+    parent.appendChild(textEl);
+}
+
+function svgEl(tag, attrs = {}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+    return el;
+}
+
+function appendSvgArrow(defs, id, color, orient = 'auto') {
+    const marker = svgEl('marker', {
+        id,
+        viewBox: '0 -5 10 10',
+        refX: 15,
+        refY: 0,
+        markerWidth: 6,
+        markerHeight: 6,
+        orient
+    });
+    marker.appendChild(svgEl('path', {d: 'M0,-5 L10,0 L0,5', fill: color}));
+    defs.appendChild(marker);
+}
+
+function captureTreeFocus(container, event = null) {
+    const rect = container.getBoundingClientRect();
+    const offsetX = event ? (event.clientX - rect.left) : (container.clientWidth / 2);
+    const offsetY = event ? (event.clientY - rect.top) : (container.clientHeight / 2);
+    return {
+        offsetX,
+        offsetY,
+        worldX: container.scrollLeft + offsetX,
+        worldY: container.scrollTop + offsetY
+    };
+}
+
+function restoreTreeFocus(container, focus, previousMetrics) {
+    if (!focus || !previousMetrics) return;
+    const widthRatio = previousMetrics.width > 0 ? (container.scrollWidth / previousMetrics.width) : 1;
+    const heightRatio = previousMetrics.height > 0 ? (container.scrollHeight / previousMetrics.height) : 1;
+    container.scrollLeft = clamp(
+        focus.worldX * widthRatio - focus.offsetX,
+        0,
+        Math.max(0, container.scrollWidth - container.clientWidth)
+    );
+    container.scrollTop = clamp(
+        focus.worldY * heightRatio - focus.offsetY,
+        0,
+        Math.max(0, container.scrollHeight - container.clientHeight)
+    );
+}
+
+function redrawCurrentTree(focus = null, previousMetrics = null) {
+    if (!currentTreeData) return;
+    drawTree(currentTreeData);
+    const container = document.getElementById('tree-container');
+    restoreTreeFocus(container, focus, previousMetrics);
+    updateTreeZoomToggle();
+}
+
+function enableTreeInteraction(container, options = {}) {
+    const zoomStep = options.zoomStep || TREE_ZOOM_STEP;
+    let enabled = !!options.enabled;
+    let isDragging = false;
+    let lastPoint = null;
+
+    function applyInteractionStyle() {
+        container.style.cursor = enabled ? 'grab' : 'default';
+        container.style.userSelect = enabled ? 'none' : '';
+        container.style.touchAction = enabled ? 'none' : 'auto';
+    }
+
+    function stopDragging(event) {
+        if (!isDragging) return;
+        isDragging = false;
+        lastPoint = null;
+        applyInteractionStyle();
+        if (event && container.releasePointerCapture) container.releasePointerCapture(event.pointerId);
+    }
+
+    function setEnabled(value) {
+        enabled = !!value;
+        stopDragging();
+        applyInteractionStyle();
+    }
+
+    applyInteractionStyle();
+
+    container.addEventListener('wheel', function(event) {
+        if (!enabled) return;
+        event.preventDefault();
+        if (!currentTreeData) return;
+        const nextZoom = clamp(
+            treeSemanticZoom * (event.deltaY < 0 ? zoomStep : 1 / zoomStep),
+            TREE_ZOOM_MIN,
+            TREE_ZOOM_MAX
+        );
+        if (nextZoom === treeSemanticZoom) return;
+        const previousMetrics = {
+            width: Math.max(1, container.scrollWidth),
+            height: Math.max(1, container.scrollHeight),
+        };
+        const focus = captureTreeFocus(container, event);
+        treeSemanticZoom = nextZoom;
+        redrawCurrentTree(focus, previousMetrics);
+    }, {passive: false});
+
+    container.addEventListener('pointerdown', function(event) {
+        if (!enabled || event.button !== 0) return;
+        event.preventDefault();
+        isDragging = true;
+        lastPoint = {x: event.clientX, y: event.clientY};
+        container.style.cursor = 'grabbing';
+        if (container.setPointerCapture) container.setPointerCapture(event.pointerId);
+    });
+
+    container.addEventListener('pointermove', function(event) {
+        if (!isDragging || !lastPoint) return;
+        const deltaX = event.clientX - lastPoint.x;
+        const deltaY = event.clientY - lastPoint.y;
+        container.scrollLeft -= deltaX;
+        container.scrollTop -= deltaY;
+        lastPoint = {x: event.clientX, y: event.clientY};
+    });
+
+    container.addEventListener('pointerup', stopDragging);
+    container.addEventListener('pointercancel', stopDragging);
+    container.addEventListener('pointerleave', function(event) {
+        if (isDragging && event.buttons === 0) stopDragging(event);
+    });
+
+    return {setEnabled};
+}
+
+function updateTreeZoomToggle() {
+    const toggle = document.getElementById('treeZoomToggle');
+    if (!toggle) return;
+    const zoomText = `${treeSemanticZoom.toFixed(2)}x`;
+    const label = treeZoomModeEnabled ? `关闭滚轮缩放（当前布局 ${zoomText}）` : `开启滚轮缩放（当前布局 ${zoomText}）`;
+    toggle.classList.toggle('active', treeZoomModeEnabled);
+    toggle.classList.toggle('btn-secondary', treeZoomModeEnabled);
+    toggle.classList.toggle('btn-outline-secondary', !treeZoomModeEnabled);
+    toggle.setAttribute('aria-pressed', String(treeZoomModeEnabled));
+    toggle.setAttribute('title', label);
+    toggle.setAttribute('aria-label', label);
+}
+
+function bindTreeZoomToggle() {
+    const toggle = document.getElementById('treeZoomToggle');
+    const container = document.getElementById('tree-container');
+    if (!toggle || !container) return;
+    currentTreeZoomController = enableTreeInteraction(container, {enabled: treeZoomModeEnabled});
+    updateTreeZoomToggle();
+    toggle.addEventListener('click', function() {
+        treeZoomModeEnabled = !treeZoomModeEnabled;
+        updateTreeZoomToggle();
+        if (currentTreeZoomController) {
+            currentTreeZoomController.setEnabled(treeZoomModeEnabled);
+        }
+    });
+}
+
+function computeFallbackTreeLayout(rootNode, config) {
+    const nodes = [];
+    const links = [];
+    let leafIndex = 0;
+    let maxDepth = 0;
+
+    function visit(node, depth, parent = null) {
+        const layoutNode = {
+            data: node,
+            depth,
+            parent,
+            x: 0,
+            y: config.topPadding + depth * config.depthGap
+        };
+        maxDepth = Math.max(maxDepth, depth);
+        nodes.push(layoutNode);
+        const children = node.children || [];
+        if (children.length === 0) {
+            layoutNode.x = config.sidePadding + leafIndex * config.leafGap;
+            leafIndex += 1;
+        } else {
+            children.forEach(child => {
+                const childNode = visit(child, depth + 1, layoutNode);
+                links.push({source: layoutNode, target: childNode});
+            });
+            const childNodes = links.filter(link => link.source === layoutNode).map(link => link.target);
+            layoutNode.x = childNodes.reduce((total, child) => total + child.x, 0) / childNodes.length;
+        }
+        return layoutNode;
+    }
+
+    visit(rootNode, 0);
+    return {
+        nodes,
+        links,
+        width: Math.max(config.width, config.sidePadding * 2 + Math.max(1, leafIndex - 1) * config.leafGap + 240),
+        height: Math.max(config.height, config.topPadding + config.bottomPadding + maxDepth * config.depthGap + 220)
+    };
+}
+
+function drawTreeFallback(treeData) {
+    const container = document.getElementById('tree-container');
+    const config = buildTreeRenderOptions(treeData.root);
+    const layout = computeFallbackTreeLayout(treeData.root, config);
+    const svg = svgEl('svg', {width: layout.width, height: layout.height});
+    svg.style.font = `${config.labelFontSize}px sans-serif`;
+    const defs = svgEl('defs');
+    svg.appendChild(defs);
+    appendSvgArrow(defs, 'dynamic-fallback-arrow-blue', '#0d6efd');
+    appendSvgArrow(defs, 'dynamic-fallback-arrow-green', '#198754');
+    appendSvgArrow(defs, 'dynamic-fallback-arrow-orange', '#f59e0b');
+    appendSvgArrow(defs, 'dynamic-fallback-arrow-red', '#dc3545');
+    appendSvgArrow(defs, 'dynamic-fallback-arrow-rollback', '#dc3545', 'auto-start-reverse');
+
+    const nodesByStep = new Map();
+    layout.nodes.forEach(node => nodesByStep.set(node.data.stepIndex, node));
+
+    layout.links.forEach(link => {
+        const color = treeColorByStatus(link.target.data.status);
+        const marker = link.target.data.status === 'risk'
+            ? 'url(#dynamic-fallback-arrow-red)'
+            : (link.target.data.status === 'nonexec'
+                ? 'url(#dynamic-fallback-arrow-orange)'
+                : (link.target.data.status === 'recovery' ? 'url(#dynamic-fallback-arrow-green)' : 'url(#dynamic-fallback-arrow-blue)'));
+        const midY = (link.source.y + link.target.y) / 2;
+        svg.appendChild(svgEl('path', {
+            d: `M ${link.source.x} ${link.source.y} C ${link.source.x} ${midY}, ${link.target.x} ${midY}, ${link.target.x} ${link.target.y}`,
+            stroke: color,
+            'stroke-width': 2.5,
+            fill: 'none',
+            'marker-end': marker
+        }));
+    });
+
+    treeData.rollbackLinks.forEach(link => {
+        const fromNode = nodesByStep.get(link.fromStepIndex);
+        const targetNode = nodesByStep.get(link.toStepIndex);
+        if (!fromNode || !targetNode) return;
+        const sideOffset = fromNode.x >= targetNode.x ? config.rollbackSideOffset : -config.rollbackSideOffset;
+        svg.appendChild(svgEl('path', {
+            d: `M ${fromNode.x} ${fromNode.y} C ${fromNode.x + sideOffset} ${fromNode.y - config.rollbackLift}, ${targetNode.x + sideOffset} ${targetNode.y + config.rollbackLift}, ${targetNode.x} ${targetNode.y}`,
+            stroke: '#dc3545',
+            'stroke-width': 3,
+            'stroke-dasharray': '8,4',
+            fill: 'none',
+            'marker-end': 'url(#dynamic-fallback-arrow-rollback)'
+        }));
+    });
+
+    layout.nodes.forEach(node => {
+        const group = svgEl('g', {transform: `translate(${node.x},${node.y})`});
+        group.appendChild(svgEl('circle', {r: config.radius, fill: treeColorByStatus(node.data.status)}));
+        const labelLines = wrapTreeLabel(node.data.name, config.labelMaxChars);
+        appendMultilineSvgText(group, labelLines, config, !!(node.data.children && node.data.children.length));
+
+        const indexText = svgEl('text', {
+            dy: '0.35em',
+            y: 5,
+            'text-anchor': 'middle',
+            fill: '#fff',
+            'font-size': config.indexFontSize,
+            'font-weight': 'bold'
+        });
+        indexText.textContent = node.data.stepIndex + 1;
+        group.appendChild(indexText);
+        svg.appendChild(group);
+    });
+
+    container.appendChild(svg);
+}
+
+function drawTree(treeData) {
+    const container = document.getElementById('tree-container');
+    container.innerHTML = '';
+    if (!treeData.root) return;
+    const config = buildTreeRenderOptions(treeData.root);
+
+    if (!window.d3) {
+        drawTreeFallback(treeData);
+        return;
+    }
+
+    const width = config.width;
+    const height = config.height;
+    const tree = d3.tree().size([
+        Math.max(160, width - config.sidePadding * 2),
+        Math.max(160, height - config.topPadding - config.bottomPadding)
+    ]);
+    const root = d3.hierarchy(treeData.root);
+    tree(root);
+
+    const svg = d3.create('svg')
+        .attr('width', width)
+        .attr('height', height)
+        .style('font', `${config.labelFontSize}px sans-serif`);
+
+    const defs = svg.append('defs');
+    const g = svg.append('g').attr('transform', `translate(${config.sidePadding}, ${config.topPadding})`);
+
+    function appendArrow(id, color, orient = 'auto') {
+        defs.append('marker')
+            .attr('id', id)
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 15)
+            .attr('refY', 0)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', orient)
+            .append('path')
+            .attr('d', 'M0,-5 L10,0 L0,5')
+            .attr('fill', color);
+    }
+
+    appendArrow('dynamic-arrow-blue', '#0d6efd');
+    appendArrow('dynamic-arrow-green', '#198754');
+    appendArrow('dynamic-arrow-orange', '#f59e0b');
+    appendArrow('dynamic-arrow-red', '#dc3545');
+    appendArrow('dynamic-arrow-rollback', '#dc3545', 'auto-start-reverse');
+
+    function markerByStatus(status) {
+        if (status === 'risk') return 'url(#dynamic-arrow-red)';
+        if (status === 'nonexec') return 'url(#dynamic-arrow-orange)';
+        if (status === 'recovery') return 'url(#dynamic-arrow-green)';
+        return 'url(#dynamic-arrow-blue)';
+    }
+
+    g.append('g')
+        .attr('fill', 'none')
+        .attr('stroke-width', 2.5)
+        .selectAll('path')
+        .data(root.links())
+        .join('path')
+        .attr('stroke', d => treeColorByStatus(d.target.data.status))
+        .attr('d', d3.linkVertical().x(d => d.x).y(d => d.y))
+        .attr('marker-end', d => markerByStatus(d.target.data.status));
+
+    treeData.rollbackLinks.forEach(link => {
+        let fromNode = null;
+        let targetNode = null;
+        root.each(d => {
+            if (d.data.stepIndex === link.fromStepIndex) fromNode = d;
+            if (d.data.stepIndex === link.toStepIndex) targetNode = d;
+        });
+        if (fromNode && targetNode) {
+            const sideOffset = fromNode.x >= targetNode.x ? config.rollbackSideOffset : -config.rollbackSideOffset;
+            g.append('path')
+                .attr('d', `M ${fromNode.x} ${fromNode.y} C ${fromNode.x + sideOffset} ${fromNode.y - config.rollbackLift}, ${targetNode.x + sideOffset} ${targetNode.y + config.rollbackLift}, ${targetNode.x} ${targetNode.y}`)
+                .attr('stroke', '#dc3545')
+                .attr('stroke-width', 3)
+                .attr('stroke-dasharray', '8,4')
+                .attr('fill', 'none')
+                .attr('marker-end', 'url(#dynamic-arrow-rollback)');
+        }
+    });
+
+    const node = g.append('g')
+        .selectAll('g')
+        .data(root.descendants())
+        .join('g')
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+
+    node.append('circle')
+        .attr('r', config.radius)
+        .attr('fill', d => treeColorByStatus(d.data.status));
+
+    node.append('text')
+        .attr('text-anchor', 'middle')
+        .style('font-weight', 'bold')
+        .style('font-size', `${config.labelFontSize}px`)
+        .each(function(d) {
+            const text = d3.select(this);
+            const lines = wrapTreeLabel(d.data.name, config.labelMaxChars);
+            const startY = d.children
+                ? -(config.radius + 14 + (lines.length - 1) * config.labelLineHeight)
+                : (config.radius + 18);
+            lines.forEach((line, index) => {
+                text.append('tspan')
+                    .attr('x', 0)
+                    .attr('y', startY + index * config.labelLineHeight)
+                    .text(line);
+            });
+        });
+
+    node.append('text')
+        .attr('dy', '0.35em')
+        .attr('y', 5)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#fff')
+        .style('font-size', `${config.indexFontSize}px`)
+        .style('font-weight', 'bold')
+        .text(d => d.data.stepIndex + 1);
+
+    container.appendChild(svg.node());
+}
+
+function populateSelect(selectEl, items, valueKey, labelKey) {
+    selectEl.innerHTML = '';
+    items.forEach(item => {
+        const option = document.createElement('option');
+        option.value = typeof valueKey === 'function' ? valueKey(item) : item[valueKey];
+        option.textContent = typeof labelKey === 'function' ? labelKey(item) : item[labelKey];
+        selectEl.appendChild(option);
+    });
+}
+
+function currentAsbAgent() {
+    return document.getElementById('asbAgent').value;
+}
+
+function currentBenchAgent() {
+    return document.getElementById('benchAgent').value;
+}
+
+function refreshAsbTasks(forceQuery = false) {
+    const agent = asbOptions.agents.find(item => item.name === currentAsbAgent());
+    const tasks = (agent && agent.tasks || []).map((task, index) => ({value: task, label: `${index + 1}. ${task}`}));
+    const taskSelect = document.getElementById('asbTaskPreset');
+    const previousTask = taskSelect.value;
+    populateSelect(taskSelect, tasks, 'value', 'label');
+    if (previousTask && tasks.some(item => item.value === previousTask)) {
+        taskSelect.value = previousTask;
+    }
+    const queryEl = document.getElementById('queryText');
+    if (taskSelect.value && (forceQuery || !queryEl.value.trim())) {
+        queryEl.value = taskSelect.value;
+    }
+}
+
+function refreshAsbTools() {
+    const toolSelect = document.getElementById('attackTool');
+    const previousTool = toolSelect.value;
+    const tools = asbOptions.tools_by_agent[currentAsbAgent()] || [];
+    const items = tools.map(tool => ({
+        name: tool.name,
+        label: `${tool.name}${tool.aggressive === 'True' ? ' [agg]' : ''}`,
+    }));
+    if (tools.length > 1) {
+        items.unshift({name: '__all__', label: '全部工具'});
+    }
+    populateSelect(toolSelect, items, 'name', 'label');
+    if (previousTool && items.some(item => item.name === previousTool)) {
+        toolSelect.value = previousTool;
+    }
+    toolSelect.disabled = items.length === 0;
+    if (items.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '该环境暂无攻击工具';
+        toolSelect.appendChild(option);
+    }
+}
+
+function refreshAsbModels() {
+    const modelSelect = document.getElementById('asbModel');
+    const previousModel = modelSelect.value;
+    const models = asbOptions.model_options || [asbOptions.default_model || 'ollama/llama3:8b'];
+    populateSelect(modelSelect, models.map(name => ({name})), 'name', 'name');
+    if (previousModel && models.includes(previousModel)) {
+        modelSelect.value = previousModel;
+    } else if (asbOptions.default_model) {
+        modelSelect.value = asbOptions.default_model;
+    }
+}
+
+function loadAsbOptions() {
+    const toolSet = document.getElementById('toolSet').value;
+    asbOptionsPromise = fetch(`/user/asb_options?toolSet=${encodeURIComponent(toolSet)}`)
+        .then(res => res.json().then(data => {
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        }))
+        .then(data => {
+            asbOptions = data;
+            const agentSelect = document.getElementById('asbAgent');
+            const previousAgent = agentSelect.value;
+            populateSelect(agentSelect, data.agents, 'name', item => item.name);
+            if (previousAgent && data.agents.some(item => item.name === previousAgent)) {
+                agentSelect.value = previousAgent;
+            }
+            if (data.default_tool_set && !document.getElementById('toolSet').value) {
+                document.getElementById('toolSet').value = data.default_tool_set;
+            }
+            refreshAsbTasks();
+            refreshAsbTools();
+            refreshAsbModels();
+            return data;
+        })
+        .finally(() => {
+            asbOptionsPromise = null;
+        });
+    return asbOptionsPromise;
+}
+
+function ensureAsbOptions() {
+    if (asbOptionsPromise) return asbOptionsPromise;
+    if (asbOptions.agents.length > 0) return Promise.resolve(asbOptions);
+    return loadAsbOptions();
+}
+
+function refreshBenchQueries(forceQuery = false) {
+    const agent = benchOptions.agents.find(item => item.name === currentBenchAgent());
+    const queries = (agent && agent.queries || []).map(item => ({value: item.query_id, label: item.label, query: item.query}));
+    const querySelect = document.getElementById('benchQueryPreset');
+    const previousQuery = querySelect.value;
+    populateSelect(querySelect, queries, 'value', 'label');
+    if (previousQuery && queries.some(item => item.value === previousQuery)) {
+        querySelect.value = previousQuery;
+    }
+    const selected = queries.find(item => item.value === querySelect.value) || queries[0];
+    if (selected && (forceQuery || !document.getElementById('queryText').value.trim())) {
+        document.getElementById('queryText').value = selected.query || '';
+    }
+}
+
+function refreshBenchModels() {
+    const modelSelect = document.getElementById('benchModel');
+    const previousModel = modelSelect.value;
+    const models = benchOptions.model_options || [benchOptions.default_model || 'llama3:8b'];
+    populateSelect(modelSelect, models.map(name => ({name})), 'name', 'name');
+    if (previousModel && models.includes(previousModel)) {
+        modelSelect.value = previousModel;
+    } else if (benchOptions.default_model) {
+        modelSelect.value = benchOptions.default_model;
+    }
+}
+
+function loadBenchOptions() {
+    benchOptionsPromise = fetch('/user/bench_options')
+        .then(res => res.json().then(data => {
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        }))
+        .then(data => {
+            benchOptions = data;
+            const agentSelect = document.getElementById('benchAgent');
+            const previousAgent = agentSelect.value;
+            populateSelect(agentSelect, data.agents, 'name', item => item.name);
+            if (previousAgent && data.agents.some(item => item.name === previousAgent)) {
+                agentSelect.value = previousAgent;
+            }
+            refreshBenchQueries();
+            refreshBenchModels();
+            return data;
+        })
+        .finally(() => {
+            benchOptionsPromise = null;
+        });
+    return benchOptionsPromise;
+}
+
+function ensureBenchOptions() {
+    if (benchOptionsPromise) return benchOptionsPromise;
+    if (benchOptions.agents.length > 0) return Promise.resolve(benchOptions);
+    return loadBenchOptions();
+}
+
+document.getElementById('agentType').addEventListener('change', function() {
+    const mode = this.value;
+    const isAsb = mode === 'ASB';
+    const isBench = mode === 'Bench';
+    document.getElementById('bench-options').style.display = isBench ? '' : 'none';
+    document.getElementById('asb-options').style.display = isAsb ? '' : 'none';
+    document.getElementById('asb-live-panel').style.display = (isAsb || isBench) ? '' : 'none';
+    document.getElementById('live-panel-title').textContent = isAsb ? 'ASB实时反馈' : 'Bench实时反馈';
+    if (isBench && benchOptions.agents.length === 0) {
+        loadBenchOptions().catch(err => {
+            document.getElementById('monitor-steps').innerHTML = `<div class="alert alert-danger">Bench选项加载失败：${escapeHtml(err.message || err)}</div>`;
+        });
+    }
+    if (isAsb && asbOptions.agents.length === 0) {
+        loadAsbOptions().catch(err => {
+            document.getElementById('monitor-steps').innerHTML = `<div class="alert alert-danger">ASB选项加载失败：${escapeHtml(err.message || err)}</div>`;
+        });
+    }
+});
+
+document.getElementById('asbAgent').addEventListener('change', function() {
+    refreshAsbTasks(true);
+    refreshAsbTools();
+});
+
+document.getElementById('toolSet').addEventListener('change', function() {
+    loadAsbOptions().catch(err => {
+        document.getElementById('monitor-steps').innerHTML = `<div class="alert alert-danger">ASB工具集合加载失败：${escapeHtml(err.message || err)}</div>`;
+    });
+});
+
+document.getElementById('asbTaskPreset').addEventListener('change', function() {
+    document.getElementById('queryText').value = this.value;
+});
+
+document.getElementById('benchAgent').addEventListener('change', function() {
+    refreshBenchQueries(true);
+});
+
+document.getElementById('benchQueryPreset').addEventListener('change', function() {
+    const agent = benchOptions.agents.find(item => item.name === currentBenchAgent());
+    const query = (agent && agent.queries || []).find(item => item.query_id === this.value);
+    if (query) document.getElementById('queryText').value = query.query || '';
+});
+
+function currentSmtMethod() {
+    return document.getElementById('smtMethod').value || 'template';
+}
+
+function refreshDeepseekSwitch() {
+    const smtSwitch = document.getElementById('smtGuardEnabled');
+    const methodSelect = document.getElementById('smtMethod');
+    const deepseekSwitch = document.getElementById('deepseekRulesEnabled');
+    methodSelect.disabled = !smtSwitch.checked;
+    deepseekSwitch.disabled = !smtSwitch.checked;
+    if (!smtSwitch.checked) deepseekSwitch.checked = false;
+}
+
+document.getElementById('smtGuardEnabled').addEventListener('change', refreshDeepseekSwitch);
+refreshDeepseekSwitch();
+bindTreeZoomToggle();
+document.getElementById('agentType').dispatchEvent(new Event('change'));
+
+document.getElementById('stopJobBtn').onclick = function() {
+    if (!currentRuntimeJobId) return;
+    runtimePollingStopped = true;
+    const agentType = document.getElementById('agentType').value;
+    const stopUrl = agentType === 'ASB' ? '/user/asb_stop' : '/user/bench_stop';
+    fetch(stopUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({jobId: currentRuntimeJobId})
+    }).finally(() => {
+        this.style.display = 'none';
+        document.getElementById('startMonitor').disabled = false;
+    });
+};
+
+document.getElementById('monitor-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('monitor-steps').innerHTML = '';
+    document.getElementById('chain-btn-area').style.display = 'none';
+    document.getElementById('chain-tree-area').style.display = 'none';
+    document.getElementById('runtime-summary').style.display = 'none';
+    document.getElementById('asb-live-log').textContent = '等待后台输出...';
+    document.getElementById('asb-live-model').textContent = '-';
+    document.getElementById('asb-live-panel').style.display = ['ASB', 'Bench'].includes(document.getElementById('agentType').value) ? '' : 'none';
+    chainHistory = [];
+    currentTreeData = null;
+    treeSemanticZoom = TREE_ZOOM_MIN;
+    updateTreeZoomToggle();
+
+    let idx = 0;
+    const agentType = document.getElementById('agentType').value;
+    const startBtn = document.getElementById('startMonitor');
+    const stopBtn = document.getElementById('stopJobBtn');
+    startBtn.disabled = true;
+    runtimePollingStopped = false;
+
+    function appendStatus(text) {
+        document.getElementById('monitor-steps').innerHTML = `<div class="alert alert-info">${escapeHtml(text)}</div>`;
+    }
+
+    function updateAsbLive(data) {
+        if (!data) return;
+        if (data.model) document.getElementById('asb-live-model').textContent = data.model;
+        if (data.log_tail) {
+            const logEl = document.getElementById('asb-live-log');
+            logEl.textContent = data.log_tail;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
+    function finishRun() {
+        startBtn.disabled = false;
+        stopBtn.style.display = 'none';
+        document.getElementById('chain-btn-area').style.display = chainHistory.length ? '' : 'none';
+    }
+
+    function pollAsbStep() {
+        if (runtimePollingStopped) return;
+        fetch('/user/asb_chain_step', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({idx: idx, jobId: currentRuntimeJobId})
+        })
+        .then(res => res.json())
+        .then(data => {
+            updateAsbLive(data);
+            if (data.waiting) {
+                if (chainHistory.length === 0) appendStatus('ASB后台正在运行，等待攻击结果写入CSV...');
+                setTimeout(pollAsbStep, 1200);
+                return;
+            }
+            if (!data.finished && data.step) {
+                updateAsbLive(data.step.output || data);
+                printStep(data.step, idx);
+                chainHistory.push(data.step);
+                updateSummary();
+                idx++;
+                setTimeout(pollAsbStep, 700);
+            } else {
+                finishRun();
+            }
+        })
+        .catch(err => {
+            appendStatus(`运行时轮询失败：${err}`);
+            finishRun();
+        });
+    }
+
+    function pollBenchStep() {
+        if (runtimePollingStopped) return;
+        fetch('/user/bench_chain_step', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({idx: idx, jobId: currentRuntimeJobId})
+        })
+        .then(res => res.json())
+        .then(data => {
+            updateAsbLive(data);
+            if (data.waiting) {
+                if (chainHistory.length === 0) appendStatus('Bench后台正在运行，等待结果文件写入...');
+                setTimeout(pollBenchStep, 1200);
+                return;
+            }
+            if (!data.finished && data.step) {
+                printStep(data.step, idx);
+                chainHistory.push(data.step);
+                updateSummary();
+                idx++;
+                setTimeout(pollBenchStep, 700);
+            } else {
+                finishRun();
+            }
+        })
+        .catch(err => {
+            appendStatus(`Bench轮询失败：${err}`);
+            finishRun();
+        });
+    }
+
+    function nextStep() {
+        fetch('/user/chain_step', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                idx: idx,
+                agentType: agentType,
+                smtGuardEnabled: document.getElementById('smtGuardEnabled').checked,
+                smtMethod: currentSmtMethod(),
+                deepseekRulesEnabled: document.getElementById('deepseekRulesEnabled').checked
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.finished) {
+                printStep(data.step, idx);
+                chainHistory.push(data.step);
+                updateSummary();
+                idx++;
+                setTimeout(nextStep, 900);
+            } else {
+                finishRun();
+            }
+        })
+        .catch(err => {
+            appendStatus(`链路加载失败：${err}`);
+            finishRun();
+        });
+    }
+
+    if (agentType === 'ASB') {
+        appendStatus('正在加载ASB选项...');
+        ensureAsbOptions()
+        .then(() => {
+            const queryText = document.getElementById('queryText').value || document.getElementById('asbTaskPreset').value;
+            const attackTool = document.getElementById('attackTool').value;
+            if (!document.getElementById('asbAgent').value) throw new Error('请选择ASB智能体环境');
+            if (!attackTool) throw new Error('当前智能体环境没有可用攻击工具，请切换攻击工具集合或智能体环境');
+            appendStatus('正在启动ASB攻击沙盒...');
+            return fetch('/user/asb_start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    queryText: queryText,
+                    attackType: document.getElementById('attackType').value,
+                    asbAgent: document.getElementById('asbAgent').value,
+                    toolSet: document.getElementById('toolSet').value,
+                    attackTool: attackTool,
+                    llmName: document.getElementById('asbModel').value || 'ollama/llama3:8b',
+                    smtGuardEnabled: document.getElementById('smtGuardEnabled').checked,
+                    smtMethod: currentSmtMethod(),
+                    deepseekRulesEnabled: document.getElementById('deepseekRulesEnabled').checked
+                })
+            });
+        })
+        .then(res => res.json().then(data => {
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        }))
+        .then(data => {
+            updateAsbLive({model: data.model || document.getElementById('asbModel').value, log_tail: `ASB job started: ${data.job_id}
+agent: ${data.agent_name}
+tool set: ${data.tool_set}
+tools: ${(data.selected_attack_tools || []).join(', ')}
+log: ${data.log_path}
+csv: ${data.csv_path}
+SMT guard: ${data.smt_guard_enabled ? 'enabled' : 'disabled'}${data.smt_guard && !data.smt_guard.z3_available ? ' (z3-solver missing)' : ''}
+SMT method: ${data.smt_method || currentSmtMethod()}
+DeepSeek rules: ${data.deepseek_rules_enabled ? (data.smt_guard && data.smt_guard.deepseek_configured ? 'enabled' : 'requested but API key missing') : 'disabled'}`});
+            currentRuntimeJobId = data.job_id;
+            stopBtn.style.display = '';
+            appendStatus(`ASB后台已启动，任务ID：${data.job_id}，环境：${data.agent_name}，工具：${(data.selected_attack_tools || []).join(', ')}`);
+            setTimeout(pollAsbStep, 1000);
+        })
+        .catch(err => {
+            appendStatus(`ASB启动失败：${err.message || err}`);
+            finishRun();
+        });
+    } else if (agentType === 'Bench') {
+        appendStatus('正在加载Bench选项...');
+        ensureBenchOptions()
+        .then(() => {
+            const benchAgent = document.getElementById('benchAgent').value;
+            const benchQueryId = document.getElementById('benchQueryPreset').value;
+            if (!benchAgent) throw new Error('请选择Bench智能体环境');
+            if (!benchQueryId) throw new Error('请选择Bench样本查询');
+            appendStatus('正在启动Bench工具链运行...');
+            return fetch('/user/bench_start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    queryText: document.getElementById('queryText').value,
+                    benchAgent: benchAgent,
+                    benchQueryId: benchQueryId,
+                    llmName: document.getElementById('benchModel').value || 'llama3:8b',
+                    smtGuardEnabled: document.getElementById('smtGuardEnabled').checked,
+                    smtMethod: currentSmtMethod()
+                })
+            });
+        })
+        .then(res => res.json().then(data => {
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        }))
+        .then(data => {
+            updateAsbLive({model: data.model || document.getElementById('benchModel').value, log_tail: `Bench job started: ${data.job_id}
+agent: ${data.agent_name || data.agent_path}
+query: ${data.query_id}
+attack tools: ${(data.selected_attack_tools || []).join(', ')}
+log: ${data.log_path}
+result: ${data.result_path}
+SMT guard: ${data.smt_guard_enabled ? 'enabled' : 'disabled'}${data.runtime && !data.runtime.z3_available ? ' (z3 unavailable)' : ''}
+SMT method: ${data.smt_method || currentSmtMethod()}`});
+            currentRuntimeJobId = data.job_id;
+            stopBtn.style.display = '';
+            appendStatus(`Bench后台已启动，任务ID：${data.job_id}，环境：${data.agent_name || data.agent_path}`);
+            setTimeout(pollBenchStep, 1000);
+        })
+        .catch(err => {
+            appendStatus(`Bench启动失败：${err.message || err}`);
+            finishRun();
+        });
+    } else {
+        currentRuntimeJobId = null;
+        stopBtn.style.display = 'none';
+        nextStep();
+    }
+});
+
+document.getElementById('showChainBtn').onclick = function() {
+    document.getElementById('chain-tree-area').style.display = '';
+    const treeData = buildChainTree(chainHistory);
+    currentTreeData = treeData;
+    treeSemanticZoom = TREE_ZOOM_MIN;
+    drawTree(treeData);
+    updateTreeZoomToggle();
+
+    const isRuntimeHistory = chainHistory.some(step => step.source === 'ASB' || step.source === 'BENCH');
+    const riskCount = chainHistory.filter(step => stepVisualStatus(step) === 'risk').length;
+    const unsatCount = chainHistory.reduce((total, step) => total + getRules(step).filter(rule => rule.result === 'UNSAT').length, 0);
+    const rollbackCount = chainHistory.filter(step => step.path && step.path.rollback_target).length;
+    const toolCallCount = chainHistory.filter(step => step.tool_call).length;
+    const checkResult = {
+        "任务类型": isRuntimeHistory ? "Bench/ASB运行时动态监管" : "运行时动态监管",
+        "检测时间戳": new Date().toLocaleString('zh-CN'),
+        "花费时间": "2.5s",
+        "风险步骤": riskCount,
+        "工具调用数": toolCallCount,
+        "路径回退点": rollbackCount,
+        "UNSAT约束": unsatCount,
+        "SMT防护": document.getElementById('smtGuardEnabled').checked,
+        "SMT策略": currentSmtMethod(),
+        "DeepSeek规则": document.getElementById('deepseekRulesEnabled').checked,
+        "回滚模式": document.getElementById('smtGuardEnabled').checked ? "smt_solver_guard" : (isRuntimeHistory ? "execution_path_only" : "solver_constraint"),
+        "红队检测时间": new Date().toISOString()
+    };
+
+    fetch('/user/dynamic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkResult)
+    });
+};
+</script>
+{% endblock %}

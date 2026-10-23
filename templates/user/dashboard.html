@@ -1,0 +1,10 @@
+{% extends "user/layout.html" %}
+{% block content %}
+<h3>用户控制台</h3>
+<p>欢迎使用智能体安全检查工具</p>
+<div class="list-group mt-3">
+    <a href="/user/dynamic" class="list-group-item list-group-item-action">动态安全检查</a>
+    <a href="/user/static" class="list-group-item list-group-item-action">最优路径分析</a>
+    <a href="/user/compare" class="list-group-item list-group-item-action">检测效果对比</a>
+</div>
+{% endblock %}

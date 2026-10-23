@@ -1,0 +1,133 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+EXTRACT(search_keyword, input, "提取用户搜索关键词")
+EXTRACT(start_param, input, "提取分页--start请求参数")
+EXTRACT(desearch_api_key, input, "提取Desearch接口密钥")
+
+EXTRACT(key_format_state, output, "提取API密钥格式校验结果")
+EXTRACT(auth_result, output, "提取服务端密钥鉴权返回状态")
+EXTRACT(param_valid_state, output, "提取搜索参数合法性校验标记")
+EXTRACT(api_response_code, output, "提取API接口响应状态码")
+EXTRACT(raw_serp_data, output, "提取原始搜索返回结果")
+EXTRACT(sensitive_content_flag, output, "提取结果敏感内容判定标记")
+
+EXTRACT(account_balance, context, "提取当前账户接口剩余额度")
+EXTRACT(api_access_policy, context, "提取接口调用访问安全策略")
+EXTRACT(black_param_range, context, "提取恶意分页参数拦截阈值范围")
+EXTRACT(sensitive_word_lib, context, "提取敏感信息判定规则库")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. API Key格式校验
+CALL(ApiFormatCheck, {desearch_api_key})
+ASSERT("密钥字符长度、编码格式符合规范" ∧ KeyFormatStandard(desearch_api_key))
+EXTRACT(key_format_pass, output, "获取密钥格式校验结果")
+IF(key_format_pass = True)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); JMP(L_RET_ERR_401_FORMAT)
+LABEL(L1_SAT)
+
+// 2. 服务端API Key鉴权
+CALL(ServerAuthVerify, {desearch_api_key})
+ASSERT("鉴权请求仅合规上报密钥，无缓存留存明文" ∧ ¬StoreRawKey)
+EXTRACT(auth_success, output, "获取服务端鉴权结果")
+IF(auth_success = True)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); JMP(L_RET_ERR_401_INVALID)
+LABEL(L2_SAT)
+
+// 3. 搜索参数合法性校验
+CALL(SearchParamCheck, {search_keyword, start_param, black_param_range})
+ASSERT("分页参数处于合法区间，不存在恶意极值篡改" ∧ ParamInLegalBounds(start_param))
+EXTRACT(param_legal, output, "获取参数校验结果")
+IF(param_legal = True)
+    THEN LABEL(L3_SAT)
+    ELSE LABEL(L3_UNSAT); JMP(L_RISK_REQ_ABUSE)
+LABEL(L3_SAT)
+
+// 4. 发起Desearch API搜索请求
+CALL(SubmitSearchRequest, {search_keyword, start_param, desearch_api_key})
+ASSERT("单次请求频次合规，无批量高频恶意调用" ∧ RequestFreqLegal)
+EXTRACT(resp_balance_status, output, "获取账户余额消耗状态")
+IF(resp_balance_status != "empty")
+    THEN LABEL(L4_SAT)
+    ELSE LABEL(L4_UNSAT); JMP(L_RET_ERR_402_BALANCE)
+LABEL(L4_SAT)
+
+// 5. 解析SERP搜索结果
+CALL(ParseSerpResult, {raw_serp_data})
+ASSERT("解析逻辑无越权读取，仅提取业务指定字段" ∧ ParseFieldLimited)
+EXTRACT(has_sensitive_info, output, "判定结果是否包含敏感信息")
+IF(has_sensitive_info = False)
+    THEN LABEL(L5_SAT); JMP(L_RETURN_STRUCT_RESULT)
+    ELSE LABEL(L5_UNSAT); JMP(L_RISK_DATA_LEAK)
+LABEL(L5_SAT)
+
+// ========== 各类错误返回分支 ==========
+LABEL(L_RET_ERR_401_FORMAT)
+RETURN "401：API Key格式无效"; JMP(L_RISK_KEY_ENUM)
+
+LABEL(L_RET_ERR_401_INVALID)
+RETURN "401：无效或缺失API密钥"; JMP(L_RISK_KEY_ENUM)
+
+LABEL(L_RET_ERR_402_BALANCE)
+RETURN "402：账户余额不足"; JMP(L_RISK_BALANCE_ABUSE)
+
+// ========== 风险分支处理 ==========
+// 参数篡改恶意请求风险
+LABEL(L_RISK_REQ_ABUSE)
+CALL(RequestAbuseMonitor, "拦截放大请求，限制批量爬取行为")
+JMP(L_RISK_SERVICE_LIMIT)
+
+// 敏感信息泄露风险
+LABEL(L_RISK_DATA_LEAK)
+CALL(SensitiveDataMask, "脱敏屏蔽敏感字段，阻断违规转发篡改")
+JMP(L_RISK_COMPLIANCE_PUNISH)
+
+// 余额耗尽滥用风险
+LABEL(L_RISK_BALANCE_ABUSE)
+CALL(AccountConsumeLock, "临时限制异常消耗，防范恶意敲诈")
+JMP(L_RISK_ASSET_LOSS)
+
+// 密钥枚举破解风险
+LABEL(L_RISK_KEY_ENUM)
+CALL(KeyBruteDefend, "新增访问风控，拦截暴力枚举尝试")
+JMP(L_RISK_KEY_COMPROMISE)
+
+// 服务限流封禁→业务中断
+LABEL(L_RISK_SERVICE_LIMIT)
+CALL(ServiceBanControl, "触发接口限流封禁")
+JMP(L_BUSINESS_INTERRUPT)
+
+// 数据泄露合规追责
+LABEL(L_RISK_COMPLIANCE_PUNISH)
+CALL(LeakAuditRecord, "留存泄露审计日志，触发合规追责")
+JMP(L_DATA_LEGAL_LIABILITY)
+
+// 账户资产损失
+LABEL(L_RISK_ASSET_LOSS)
+CALL(AssetLossStat, "统计账户资金损耗")
+JMP(L_FUND_LOSS_RESULT)
+
+// 密钥破解越权风险
+LABEL(L_RISK_KEY_COMPROMISE)
+CALL(FullAccessAlert, "告警密钥失控，存在账户全权接管风险")
+JMP(L_ACCOUNT_TAKEOVER)
+
+// ========== 最终风险影响节点 ==========
+LABEL(L_BUSINESS_INTERRUPT)
+LABEL(L_DATA_LEGAL_LIABILITY)
+LABEL(L_FUND_LOSS_RESULT)
+LABEL(L_ACCOUNT_TAKEOVER)
+
+// 正常返回结构化结果
+LABEL(L_RETURN_STRUCT_RESULT)
+RETURN "结构化搜索结果"; JMP(L_FINISH_SEARCH_TASK)
+
+LABEL(L_FINISH_SEARCH_TASK)
+RETURN
+
+// 全局风险回滚
+LABEL(L_RISK_ROLLBACK)
+CALL(RequestRecall, "终止异常请求，重置调用会话")
+JMP(main_start)

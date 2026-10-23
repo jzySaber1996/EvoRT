@@ -1,0 +1,92 @@
+[
+  {
+    "id": 0,
+    "root": -1,
+    "node_type": "role_description",
+    "name": "desearch-web-search",
+    "description": "Search the web and get real-time SERP-style results with titles, URLs, and snippets. Use this for general web queries when you need current links and information from across the internet.",
+    "risk_type": []
+  },
+  {
+    "id": 1,
+    "root": 0,
+    "sibling node": -1,
+    "node_type": "others",
+    "description": "# Web Search By Desearch\n\nReal-time web search returning structured SERP-style results with titles, links, and snippets.",
+    "risk_type": []
+  },
+  {
+    "id": 2,
+    "root": 1,
+    "sibling node": -1,
+    "node_type": "function",
+    "description": "## Quick Start\n\n1. Get an API key from https://console.desearch.ai\n2. Set environment variable: `export DESEARCH_API_KEY='your-key-here'`",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 3,
+    "root": 1,
+    "sibling node": 2,
+    "node_type": "function",
+    "description": "## Usage\n\n```bash\n# Basic web search\ndesearch.py web \"quantum computing\"\n\n# Paginated results\ndesearch.py web \"quantum computing\" --start 10\n```",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 4,
+    "root": 1,
+    "sibling node": 3,
+    "node_type": "others",
+    "description": "## Options\n\n| Option | Description |\n|--------|-------------|\n| `--start` | Pagination offset (default: 0). Use to get the next page of results. |",
+    "risk_type": []
+  },
+  {
+    "id": 5,
+    "root": 1,
+    "sibling node": 4,
+    "node_type": "others",
+    "description": "## Response",
+    "risk_type": []
+  },
+  {
+    "id": 6,
+    "root": 5,
+    "sibling node": -1,
+    "node_type": "example",
+    "description": "### Example\n```bash\ndesearch.py web \"best sights in Georgia\"\n```\n\n```json\n{\n  \"data\": [\n    {\n      \"title\": \"Cool places and fun things to do in Georgia ? : r/solotravel\",\n      \"snippet\": \"I was in Georgia earlier this month. My favorite place was Mtirala National Park in Adjara. The mountains and forest were absolutely beautiful ...\",\n      \"link\": \"https://www.reddit.com/r/solotravel/comments/py4wls/cool_places_and_fun_things_to_do_in_georgia/\",\n    },\n  ]\n}\n```",
+    "risk_type": [
+      1,
+      4
+    ]
+  },
+  {
+    "id": 7,
+    "root": 5,
+    "sibling node": 6,
+    "node_type": "constraint and advice",
+    "description": "### Notes\n- Returns up to 10 results per page. Use `--start` to paginate.",
+    "risk_type": []
+  },
+  {
+    "id": 8,
+    "root": 5,
+    "sibling node": 7,
+    "node_type": "example",
+    "description": "### Errors\nStatus 401, Unauthorized (e.g., missing/invalid API key)\n```json\n{\n  \"detail\": \"Invalid or missing API key\"\n}\n```\n\nStatus 402, Payment Required (e.g., balance depleted)\n```json\n{\n  \"detail\": \"Insufficient balance, please add funds to your account to continue using the service.\"\n}\n```",
+    "risk_type": []
+  },
+  {
+    "id": 9,
+    "root": 1,
+    "sibling node": 5,
+    "node_type": "reference",
+    "description": "## Resources\n- [API Reference](https://desearch.ai/docs/api-reference/get-web)\n- [Desearch Console](https://console.desearch.ai)",
+    "risk_type": [
+      4
+    ]
+  }
+]

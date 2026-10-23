@@ -1,0 +1,137 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+// 输入变量 V_in：用户输入（合法需求+恶意注入）
+EXTRACT(user_requirement, input, "提取用户原始需求文本")
+EXTRACT(output_path, input, "提取用户指定的输出路径")
+EXTRACT(custom_filename, input, "提取用户自定义文件名")
+EXTRACT(diagram_spec, input, "提取用户图表结构描述")
+
+// 输出变量 V_out：工具执行返回结果
+EXTRACT(parse_result, output, "提取用户输入解析结果")
+EXTRACT(config_data, output, "提取配置文件读取结果")
+EXTRACT(json_spec_content, output, "提取生成的JSON规格内容")
+EXTRACT(schema_validate_result, output, "提取JSON Schema校验结果")
+EXTRACT(diagram_file_path, output, "提取最终图表文件路径")
+EXTRACT(generate_success, output, "提取文件生成成功标记")
+
+// 全局上下文变量 V_ctx：系统配置、安全策略、路径白名单
+EXTRACT(legal_output_dirs, context, "提取系统允许的输出目录白名单")
+EXTRACT(sensitive_file_list, context, "提取系统敏感文件黑名单（.ssh/config、/etc/passwd）")
+EXTRACT(secure_config_path, context, "提取安全配置文件存储路径")
+EXTRACT(diagram_secure_schema, context, "提取图表文件安全校验Schema")
+EXTRACT(sensitive_topics, context, "提取敏感信息关键词库（内网拓扑、架构）")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 解析用户输入（核心风险入口：路径/内容注入）
+CALL(parse_user_input, {user_requirement})
+ASSERT("输入无恶意字符，无路径遍历注入（../、..\）" ∧ ¬PathTraversalInject(user_requirement))
+EXTRACT(parsed_input, output, "解析后的用户需求参数")
+IF("输入解析安全，无注入特征" ∧ InputContentSafe)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); JMP(L_RISK_INPUT_INJECT)
+LABEL(L1_SAT)
+
+// 分支：首次使用判断
+EXTRACT(is_first_use, output, "提取是否首次使用标记")
+IF(is_first_use = True)
+    THEN LABEL(L1_FIRST_SAT); JMP(L_INIT_CONFIG)
+    ELSE LABEL(L1_FIRST_UNSAT); JMP(L_GET_CONFIG)
+LABEL(L1_FIRST_SAT)
+
+// 2. 初始化配置（风险：配置路径篡改）
+LABEL(L_INIT_CONFIG)
+CALL(init_config, {secure_config_path})
+ASSERT("配置路径为系统安全路径，禁止自定义恶意路径" ∧ ConfigPathInWhiteList)
+EXTRACT(init_config_result, output, "配置初始化结果")
+IF("配置未被篡改，路径安全" ∧ ¬ConfigTampering)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); JMP(L_RISK_CONFIG_TAMPER)
+LABEL(L2_SAT)
+JMP(L_GET_CONFIG)
+
+// 3. 读取配置（风险：读取被篡改的配置）
+LABEL(L_GET_CONFIG)
+CALL(get_config, {init_config_result})
+ASSERT("配置文件未被篡改，输出目录合规" ∧ ConfigContentLegal)
+EXTRACT(runtime_config, output, "运行时配置参数")
+IF("配置读取安全，无恶意路径" ∧ ConfigReadSafe)
+    THEN LABEL(L3_SAT)
+    ELSE LABEL(L3_UNSAT); JMP(L_RISK_CONFIG_TAMPER)
+LABEL(L3_SAT)
+
+// 4. 生成JSON规格（风险：敏感信息泄露）
+LABEL(L_GENERATE_JSON_SPEC)
+CALL(generate_json_spec, {parsed_input, runtime_config})
+ASSERT("JSON规格不包含敏感信息（内网拓扑/架构）" ∧ ¬ContainSensitiveTopology)
+EXTRACT(generated_json_spec, output, "生成的JSON规格")
+IF("内容安全，无敏感数据" ∧ JsonSpecContentSafe)
+    THEN LABEL(L4_SAT)
+    ELSE LABEL(L4_UNSAT); JMP(L_RISK_SENSITIVE_LEAK)
+LABEL(L4_SAT)
+
+// 5. JSON Schema校验（风险：绕过校验生成恶意文件）
+LABEL(L_VALIDATE_JSON_SCHEMA)
+CALL(validate_json_schema, {generated_json_spec, diagram_secure_schema})
+ASSERT("严格校验字段类型与格式，禁止类型混淆绕过" ∧ SchemaStrictCheck)
+EXTRACT(schema_pass, output, "Schema校验通过标记")
+IF(schema_pass = True)
+    THEN LABEL(L5_SAT)
+    ELSE LABEL(L5_UNSAT); JMP(main_start) // 返回错误，重新输入
+LABEL(L5_SAT)
+
+// 6. 生成图表（核心风险：路径遍历、文件覆盖、恶意文件生成）
+LABEL(L_GENERATE_DIAGRAM)
+CALL(generate_diagram, {generated_json_spec, runtime_config, output_path, custom_filename})
+// 三重安全校验：路径合法 + 文件名合法 + 内容无恶意代码
+ASSERT("输出路径在白名单内，无../遍历" ∧ OutputPathLegal ∧
+       "文件名非敏感系统文件" ∧ ¬SensitiveFileName ∧
+       "图表内容无脚本注入" ∧ ¬DiagramScriptInject)
+EXTRACT(file_generated, output, "文件生成状态")
+IF("文件生成安全合规" ∧ DiagramGenerateSafe)
+    THEN LABEL(L6_SAT)
+    ELSE LABEL(L6_UNSAT); JMP(L_RISK_FILE_ATTACK)
+LABEL(L6_SAT)
+
+// 7. 文件生成结果判断
+LABEL(L_GENERATE_RESULT)
+EXTRACT(generate_success_flag, output, "生成成功标记")
+IF(generate_success_flag = True)
+    THEN LABEL(L7_SAT); JMP(L_TASK_FINISH)
+    ELSE LABEL(L7_UNSAT); JMP(L_GENERATE_DIAGRAM) // 重试生成
+LABEL(L7_SAT)
+
+// ========== 风险分支统一处理 ==========
+// 风险1：用户输入注入（路径遍历/恶意文件名）
+LABEL(L_RISK_INPUT_INJECT)
+CALL(BlockMaliciousInput, "拦截路径遍历/恶意内容注入")
+JMP(L_RISK_ROLLBACK)
+
+// 风险2：配置文件篡改
+LABEL(L_RISK_CONFIG_TAMPER)
+CALL(RestoreSecureConfig, "恢复默认安全配置，清除恶意路径")
+JMP(L_RISK_ROLLBACK)
+
+// 风险3：敏感信息泄露
+LABEL(L_RISK_SENSITIVE_LEAK)
+CALL(FilterSensitiveContent, "过滤/脱敏敏感拓扑信息")
+JMP(L_RISK_ROLLBACK)
+
+// 风险4：路径遍历/文件覆盖/恶意文件生成（统一出口）
+LABEL(L_RISK_FILE_ATTACK)
+CALL(DeleteUnsafeFile, "删除不安全的生成文件")
+CALL(BlockFileWrite, "拦截非法路径/敏感文件覆盖操作")
+JMP(L_RISK_ROLLBACK)
+
+// ========== 全局风险回滚分支 ==========
+LABEL(L_RISK_ROLLBACK)
+CALL(ClearUnsafeData, "清理不安全的输入/配置/临时文件")
+CALL(ResetSession, "重置当前执行会话")
+JMP(main_start)
+
+// ========== 正常流程：任务完成 ==========
+LABEL(L_TASK_FINISH)
+RETURN "图表生成完成，文件路径：" + diagram_file_path
+
+// ========== 程序结束 ==========
+RETURN

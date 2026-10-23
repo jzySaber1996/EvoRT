@@ -1,0 +1,189 @@
+// ========== Agent动态生成：变量抽取阶段（从上下文、入参、返回值实时拿数据） ==========
+// 输入变量 V_in：从用户调试请求入参抽取
+EXTRACT(target_program, input, "从用户输入提取目标调试程序")
+EXTRACT(fault_phenomenon, input, "从用户输入提取故障现象描述")
+EXTRACT(debug_command, input, "从用户输入提取调试指令")
+
+// 全局上下文变量 V_ctx：从调试环境、历史会话抽取
+EXTRACT(debug_session_info, context, "提取历史调试会话的运行上下文")
+EXTRACT(system_resource_status, context, "提取系统进程/端口/内存实时状态")
+EXTRACT(network_env_status, context, "提取网络URL/连接/端口安全状态")
+EXTRACT(console_log_permission, context, "提取日志输出权限与脱敏规则")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 运行时调试工具 RuntimeDebugger
+EXTRACT(debug_target, input, "提取运行时调试目标程序")
+EXTRACT(debug_cmd, input, "提取运行时调试指令")
+CALL(RuntimeDebugger, {debug_target, debug_cmd, fault_phenomenon})
+ASSERT("调试指令合法，无系统高危操作" ∧ LegalDebugCmd(debug_cmd) ∧ debug_target ≠ ∅)
+EXTRACT(debug_session_result, output, "提取调试会话返回结果")
+EXTRACT(memory_exception_flag, output, "提取内存异常标记")
+IF("调试会话仅访问目标程序内存，无越权系统调用" ∧ ¬SystemPrivilegeEscalation ∧ DebugScopeLegal(target_program))
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L1_SAT)
+
+// 分支判断：调试会话是否存在内存异常
+IF(memory_exception_flag = True)
+    THEN LABEL(L1_MEM_SAT)
+    ELSE LABEL(L1_MEM_UNSAT); JMP(main_start)
+LABEL(L1_MEM_SAT)
+
+// 2. 内存分析工具 MemoryAnalyzer
+EXTRACT(runtime_memory_data, output, "从调试器返回提取内存数据")
+CALL(MemoryAnalyzer, {runtime_memory_data})
+ASSERT("内存分析仅读取程序堆/栈数据，不篡改系统内存" ∧ ¬MemoryTampering ∧ ReadOnlyMemoryAccess)
+EXTRACT(leak_point_flag, output, "提取内存泄漏点定位标记")
+IF("内存分析结果不泄露敏感内存地址，仅输出故障描述" ∧ ¬SensitiveAddressLeak)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L2_SAT)
+
+// 分支判断：是否定位内存泄漏点
+IF(leak_point_flag = True)
+    THEN LABEL(L2_LEAK_SAT)
+    ELSE LABEL(L2_LEAK_UNSAT); JMP(L1_SAT)
+LABEL(L2_LEAK_SAT)
+
+// 3. 控制台日志工具 ConsoleLogger（内存调试分支）
+EXTRACT(memory_debug_result, output, "提取内存泄漏定位结果")
+CALL(ConsoleLogger, {memory_debug_result})
+ASSERT("日志输出遵循脱敏规则，不泄露系统敏感信息" ∧ LogDesensitizationRule)
+EXTRACT(memory_log_status, output, "提取内存日志记录状态")
+IF("日志仅本地落地，禁止上传至外部服务器" ∧ ¬LogUploadToExternalServer)
+    THEN LABEL(L3_SAT)
+    ELSE LABEL(L3_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L3_SAT)
+LABEL(L_FINISH_MEM_DEBUG) // 完成内存调试标签
+
+// ========== 网络调试分支开始 ==========
+LABEL(L_NET_DEBUG_START)
+// 4. 网络调试工具 NetworkDebugger
+EXTRACT(network_target_url, input, "提取待调试的网络URL")
+EXTRACT(network_port, input, "提取待调试的端口")
+CALL(NetworkDebugger, {network_target_url, network_port, fault_phenomenon})
+ASSERT("网络调试不发起恶意请求，端口访问合法" ∧ LegalNetworkRequest ∧ PortAccessLegal(network_port))
+EXTRACT(network_request_result, output, "提取网络请求结果")
+EXTRACT(port_exception_flag, output, "提取端口/连接异常标记")
+EXTRACT(url_exception_flag, output, "提取URL访问异常标记")
+IF("网络调试不劫持连接、不窃取传输数据" ∧ ¬NetworkConnectionHijack ∧ ¬DataInterception)
+    THEN LABEL(L4_SAT)
+    ELSE LABEL(L4_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L4_SAT)
+
+// 分支1：端口/连接异常 → 跳转到资源诊断工具
+IF(port_exception_flag = True)
+    THEN LABEL(L4_PORT_SAT); JMP(L_RESOURCE_DIAGNOSIS)
+    ELSE LABEL(L4_PORT_UNSAT)
+LABEL(L4_PORT_SAT)
+
+// 分支2：URL访问异常 → Git二分定位工具
+IF(url_exception_flag = True)
+    THEN LABEL(L4_URL_SAT)
+    ELSE LABEL(L4_URL_UNSAT); JMP(L_NET_DEBUG_START)
+LABEL(L4_URL_SAT)
+
+// 5. Git二分定位工具 GitBisectTool
+EXTRACT(fault_commit_target, input, "提取故障代码仓库")
+CALL(GitBisectTool, {fault_commit_target, fault_phenomenon})
+ASSERT("Git操作仅读取提交记录，禁止强制推送/删除分支" ∧ ¬GitForcePush ∧ ReadOnlyRepoAccess)
+EXTRACT(bisect_result_flag, output, "提取故障提交定位标记")
+IF("Git操作不泄露代码仓库密钥、权限信息" ∧ ¬RepoCredentialLeak)
+    THEN LABEL(L5_SAT)
+    ELSE LABEL(L5_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L5_SAT)
+
+// 分支判断：是否找到故障提交
+IF(bisect_result_flag = True)
+    THEN LABEL(L5_BISECT_SAT)
+    ELSE LABEL(L5_BISECT_UNSAT); JMP(L_NET_DEBUG_START)
+LABEL(L5_BISECT_SAT)
+
+// 日志输出故障定位结果
+EXTRACT(git_debug_result, output, "提取Git故障定位结果")
+CALL(ConsoleLogger, {git_debug_result})
+ASSERT("日志输出遵循脱敏规则，不泄露代码敏感逻辑" ∧ LogDesensitizationRule)
+EXTRACT(git_log_status, output, "提取Git日志记录状态")
+IF("日志仅本地落地，禁止上传至外部服务器" ∧ ¬LogUploadToExternalServer)
+    THEN LABEL(L6_SAT)
+    ELSE LABEL(L6_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L6_SAT)
+
+// ========== 资源诊断工具 ResourceDiagnoser ==========
+LABEL(L_RESOURCE_DIAGNOSIS)
+EXTRACT(system_process_data, context, "提取系统进程信息")
+EXTRACT(system_port_data, context, "提取系统端口占用信息")
+CALL(ResourceDiagnoser, {system_process_data, system_port_data})
+ASSERT("资源诊断仅读取状态，禁止杀死系统关键进程" ∧ ¬KillSystemProcess ∧ ReadOnlyResourceAccess)
+EXTRACT(resource_exception_flag, output, "提取进程/端口异常标记")
+IF("资源诊断不泄露系统进程权限、配置信息" ∧ ¬SystemConfigLeak)
+    THEN LABEL(L7_SAT)
+    ELSE LABEL(L7_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L7_SAT)
+
+// 分支判断：是否存在进程/端口异常
+IF(resource_exception_flag = True)
+    THEN LABEL(L7_RES_SAT)
+    ELSE LABEL(L7_RES_UNSAT); JMP(L_NET_DEBUG_START)
+LABEL(L7_RES_SAT)
+
+// 日志输出资源诊断结果
+EXTRACT(resource_debug_result, output, "提取资源诊断异常结果")
+CALL(ConsoleLogger, {resource_debug_result})
+ASSERT("日志输出遵循脱敏规则，不泄露系统敏感配置" ∧ LogDesensitizationRule)
+EXTRACT(resource_log_status, output, "提取资源日志记录状态")
+IF("日志仅本地落地，禁止上传至外部服务器" ∧ ¬LogUploadToExternalServer)
+    THEN LABEL(L8_SAT)
+    ELSE LABEL(L8_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L8_SAT)
+
+// ========== CSS前端样式调试分支 ==========
+LABEL(L_CSS_DEBUG_START)
+// 6. CSS样式调试工具 CSSDebugger
+EXTRACT(target_css_file, input, "提取待调试的样式文件")
+EXTRACT(debug_style_rule, input, "提取样式调试规则")
+CALL(CSSDebugger, {target_css_file, debug_style_rule})
+ASSERT("CSS调试仅修改前端样式，禁止注入恶意脚本" ∧ ¬ScriptInjection ∧ LegalStyleModify)
+EXTRACT(debug_style_result, output, "提取样式调试效果")
+IF("样式调试不篡改页面DOM结构、不窃取页面数据" ∧ ¬DOMTampering ∧ ¬PageDataLeak)
+    THEN LABEL(L9_SAT)
+    ELSE LABEL(L9_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L9_SAT)
+
+// 分支判断：样式是否符合预期
+IF(debug_style_result = True)
+    THEN LABEL(L9_CSS_SAT); LABEL(L_FINISH_CSS_DEBUG) // 完成样式调试
+    ELSE LABEL(L9_CSS_UNSAT); JMP(L_CONSOLE_LOG)
+LABEL(L9_CSS_SAT)
+
+// CSS调试异常 → 日志输出
+LABEL(L_CONSOLE_LOG)
+EXTRACT(css_debug_result, output, "提取CSS调试异常结果")
+CALL(ConsoleLogger, {css_debug_result})
+ASSERT("日志输出遵循脱敏规则，不泄露前端页面敏感信息" ∧ LogDesensitizationRule)
+EXTRACT(css_log_status, output, "提取CSS日志记录状态")
+IF("日志仅本地落地，禁止上传至外部服务器" ∧ ¬LogUploadToExternalServer)
+    THEN LABEL(L10_SAT)
+    ELSE LABEL(L10_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L10_SAT)
+
+// ========== 风险回滚分支：所有约束不满足时统一跳转至此 ==========
+LABEL(L_RISK_ROLLBACK)
+// 回滚策略：终止当前高危调试操作，返回主执行链安全节点
+JMP(main_start)
+
+// ========== 通用收尾：调试结果输出/日志落地 ==========
+LABEL(L_RESULT_OUTPUT)
+EXTRACT(debug_total_result, input, "汇总所有调试模块结果")
+CALL(ConsoleLogger, {debug_total_result})
+ASSERT("最终日志完整脱敏，无任何敏感信息泄露" ∧ FullLogDesensitization)
+EXTRACT(final_log_status, output, "提取最终日志落地状态")
+IF("调试任务完成，无安全风险、无数据泄露" ∧ DebugTaskSafeFinish)
+    THEN LABEL(L_FINISH_ALL)
+    ELSE LABEL(L_FINISH_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L_FINISH_ALL)
+
+// ========== 完成调试任务 ==========
+RETURN

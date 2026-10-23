@@ -1,0 +1,182 @@
+[
+  {
+    "id": 0,
+    "root": -1,
+    "node_type": "role_description",
+    "name": "Docker",
+    "description": "Docker containers, images, Compose stacks, networking, volumes, debugging, production hardening, and the commands that keep real environments stable. Use when (1) the task touches Docker, Dockerfiles, images, containers, or Compose; (2) build reliability, runtime behavior, logs, ports, volumes, or security matter; (3) the agent needs Docker guidance and should apply it by default.",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 1,
+    "root": 0,
+    "sibling node": -1,
+    "node_type": "others",
+    "description": "## When to Use\n\nUse when the task involves Docker, Dockerfiles, container builds, Compose, image publishing, networking, volumes, logs, debugging, or production container operations. This skill is stateless and should be applied directly whenever Docker work appears.",
+    "risk_type": [
+      7
+    ]
+  },
+  {
+    "id": 2,
+    "root": 0,
+    "sibling node": 1,
+    "node_type": "reference",
+    "description": "## Quick Reference\n\n| Topic | File |\n|-------|------|\n| Essential commands | `commands.md` |\n| Dockerfile patterns | `images.md` |\n| Compose orchestration | `compose.md` |\n| Networking & volumes | `infrastructure.md` |\n| Security hardening | `security.md` |",
+    "risk_type": []
+  },
+  {
+    "id": 3,
+    "root": 0,
+    "sibling node": 2,
+    "node_type": "constraint and advice",
+    "description": "## Core Rules",
+    "risk_type": []
+  },
+  {
+    "id": 4,
+    "root": 3,
+    "sibling node": -1,
+    "node_type": "constraint and advice",
+    "description": "### 1. Pin Image Versions\n- `python:3.11.5-slim` not `python:latest`\n- Today's latest differs from tomorrow's — breaks immutable builds",
+    "risk_type": []
+  },
+  {
+    "id": 5,
+    "root": 3,
+    "sibling node": 4,
+    "node_type": "constraint and advice",
+    "description": "### 2. Combine RUN Commands\n- `apt-get update && apt-get install -y pkg` in ONE layer\n- Separate layers = stale package cache weeks later",
+    "risk_type": [
+      1
+    ]
+  },
+  {
+    "id": 6,
+    "root": 3,
+    "sibling node": 5,
+    "node_type": "constraint and advice",
+    "description": "### 3. Non-Root by Default\n- Add `USER nonroot` in Dockerfile\n- Running as root fails security scans and platform policies",
+    "risk_type": []
+  },
+  {
+    "id": 7,
+    "root": 3,
+    "sibling node": 6,
+    "node_type": "constraint and advice",
+    "description": "### 4. Set Resource Limits\n- `-m 512m` on every container\n- OOM killer strikes without warning otherwise",
+    "risk_type": []
+  },
+  {
+    "id": 8,
+    "root": 3,
+    "sibling node": 7,
+    "node_type": "constraint and advice",
+    "description": "### 5. Configure Log Rotation\n- Default json-file driver has no size limit\n- One chatty container fills disk and crashes host",
+    "risk_type": []
+  },
+  {
+    "id": 9,
+    "root": 0,
+    "sibling node": 3,
+    "node_type": "constraint and advice",
+    "description": "## Image Traps\n\n- Multi-stage builds: forgotten `--from=builder` copies from wrong stage silently\n- COPY before RUN invalidates cache on every file change — copy requirements first, install, then copy code\n- `ADD` extracts archives automatically — use `COPY` unless you need extraction\n- Build args visible in image history — never use for secrets",
+    "risk_type": [
+      5
+    ]
+  },
+  {
+    "id": 10,
+    "root": 0,
+    "sibling node": 9,
+    "node_type": "constraint and advice",
+    "description": "## Runtime Traps\n\n- `localhost` inside container is container's localhost — bind to `0.0.0.0`\n- Port already in use: previous container still stopping — wait or force remove\n- Exit code 137 = OOM killed, 139 = segfault — check with `docker inspect --format='{{.State.ExitCode}}'`\n- No shell in distroless images — `docker cp` files out or use debug sidecar",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 11,
+    "root": 0,
+    "sibling node": 10,
+    "node_type": "constraint and advice",
+    "description": "## Networking Traps\n\n- Container DNS only works on custom networks — default bridge can't resolve names\n- Published ports bind to `0.0.0.0` — use `127.0.0.1:5432:5432` for local-only\n- Zombie connections from killed containers — set health checks and restart policies",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 12,
+    "root": 0,
+    "sibling node": 11,
+    "node_type": "constraint and advice",
+    "description": "## Compose Traps\n\n- `depends_on` waits for container start, not service ready — use `condition: service_healthy`\n- `.env` file in wrong directory silently ignored — must be next to docker-compose.yml\n- Volume mounts overwrite container files — empty host dir = empty container dir\n- YAML anchors don't work across files — use multiple compose files instead",
+    "risk_type": [
+      5
+    ]
+  },
+  {
+    "id": 13,
+    "root": 0,
+    "sibling node": 12,
+    "node_type": "constraint and advice",
+    "description": "## Volume Traps\n\n- Anonymous volumes accumulate silently — use named volumes\n- Bind mounts have permission issues — container user must match host user\n- `docker system prune` doesn't remove named volumes — add `--volumes` flag\n- Stopped container data persists until container removed",
+    "risk_type": [
+      1
+    ]
+  },
+  {
+    "id": 14,
+    "root": 0,
+    "sibling node": 13,
+    "node_type": "constraint and advice",
+    "description": "## Resource Leaks\n\n- Dangling images grow unbounded — `docker image prune` regularly\n- Build cache grows forever — `docker builder prune` reclaims space\n- Stopped containers consume disk — `docker container prune` or `--rm` on run\n- Networks pile up from compose projects — `docker network prune`",
+    "risk_type": [
+      1
+    ]
+  },
+  {
+    "id": 15,
+    "root": 0,
+    "sibling node": 14,
+    "node_type": "constraint and advice",
+    "description": "## Secrets and Security\n\n- ENV and COPY bake secrets into layer history permanently — use secrets mount or runtime env\n- `--privileged` disables all security — almost never needed, find specific capability instead\n- Images from unknown registries may be malicious — verify sources\n- Build args visible in image history — don't use for secrets",
+    "risk_type": []
+  },
+  {
+    "id": 16,
+    "root": 0,
+    "sibling node": 15,
+    "node_type": "constraint and advice",
+    "description": "## Debugging\n\n- Exit code 137 = OOM killed, 139 = segfault — check `docker inspect --format='{{.State.ExitCode}}'`\n- Container won't start: check logs even for failed containers — `docker logs <container>`\n- No shell in distroless images — `docker cp` files out or use debug sidecar\n- Inspect filesystem of dead container — `docker cp deadcontainer:/path ./local`",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 17,
+    "root": 0,
+    "sibling node": 16,
+    "node_type": "reference",
+    "description": "## Related Skills\nInstall with `clawhub install <slug>` if user confirms:\n- `devops` — deployment pipelines\n- `linux` — host system management\n- `server` — server administration",
+    "risk_type": [
+      1
+    ]
+  },
+  {
+    "id": 18,
+    "root": 0,
+    "sibling node": 17,
+    "node_type": "others",
+    "description": "## Feedback\n\n- If useful: `clawhub star docker`\n- Stay updated: `clawhub sync`",
+    "risk_type": [
+      1,
+      7
+    ]
+  }
+]

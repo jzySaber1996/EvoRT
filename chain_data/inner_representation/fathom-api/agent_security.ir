@@ -1,0 +1,90 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+EXTRACT(maton_api_key, input, "提取MATON接口认证密钥")
+EXTRACT(op_command, input, "提取业务操作指令")
+EXTRACT(destination_url, input, "提取异步回调目标地址")
+
+EXTRACT(auth_pass_flag, output, "API密钥认证结果标记")
+EXTRACT(conn_op_result, output, "连接管理操作返回数据")
+EXTRACT(meeting_list_data, output, "会议列表查询结果")
+EXTRACT(recording_content, output, "录制摘要与转录文本数据")
+EXTRACT(team_member_data, output, "团队及成员信息结果")
+EXTRACT(webhook_meta, output, "Webhook标识与密钥信息")
+EXTRACT(async_callback_state, output, "异步回调推送执行状态")
+
+EXTRACT(api_auth_policy, context, "MATON接口鉴权安全规则")
+EXTRACT(op_access_scope, context, "各类操作权限访问范围约束")
+EXTRACT(callback_secure_rule, context, "异步回调地址可信校验策略")
+EXTRACT(webhook_manage_spec, context, "Webhook生命周期管理规范")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 接口身份认证校验
+CALL(AuthVerification, {maton_api_key})
+ASSERT("密钥格式合法，仅授权主体可发起接口调用" ∧ ApiKeyFormatValid ∧ AccessSubjectTrusted)
+EXTRACT(auth_success, output, "认证判定结果")
+IF(auth_success = True)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); RETURN "401 认证失败，终止请求"
+LABEL(L1_SAT)
+
+// 2. 区分业务操作类型
+EXTRACT(op_type, output, "解析当前操作类别")
+IF(op_type = "ConnectionManage") THEN LABEL(L_CONN_OP)
+ELSE IF(op_type = "MeetingQuery") THEN LABEL(L_MEET_QUERY)
+ELSE IF(op_type = "RecordingFetch") THEN LABEL(L_REC_FETCH)
+ELSE IF(op_type = "TeamQuery") THEN LABEL(L_TEAM_QUERY)
+ELSE IF(op_type = "WebhookManage") THEN LABEL(L_WEBHOOK_OP)
+ELSE RETURN "非法操作指令"
+
+// 3. 连接管理操作
+LABEL(L_CONN_OP)
+CALL(ConnOperate, {ListConnections,CreateConnection,GetConnection,DeleteConnection})
+ASSERT("连接增删查改遵循权限边界，无越权操控他人连接" ∧ ConnOpScopeControlled)
+EXTRACT(create_conn_tag, output, "是否为创建连接操作")
+IF(create_conn_tag = True)
+    THEN CALL(ReturnOAuthUrl, {}); JMP(L_USER_RESULT)
+ELSE JMP(L_USER_RESULT)
+
+// 4. 会议数据查询
+LABEL(L_MEET_QUERY)
+CALL(ListMeetings, {})
+ASSERT("仅查询授权范围内会议数据，不窃取私有会议信息" ∧ MeetingDataAuthorized)
+EXTRACT(need_recording, output, "判定是否拉取录制内容")
+IF(need_recording = True)
+    THEN JMP(L_REC_FETCH)
+    ELSE JMP(L_USER_RESULT)
+
+// 5. 录制内容获取
+LABEL(L_REC_FETCH)
+CALL(GetRecordingSummary, {})
+CALL(GetRecordingTranscript, {})
+ASSERT("录制文本合规返回，禁止泄露会议涉密谈话内容" ∧ RecordingContentSafe)
+EXTRACT(async_push_mode, output, "同步/异步回调模式判定")
+IF(async_push_mode = True)
+    THEN CALL(AsyncPostCallback, {destination_url, callback_secure_rule})
+JMP(L_USER_RESULT)
+
+// 6. 团队数据查询
+LABEL(L_TEAM_QUERY)
+CALL(ListTeams, {})
+CALL(ListTeamMembers, {})
+ASSERT("成员信息脱敏输出，保护人员隐私字段" ∧ MemberInfoDesensitized)
+JMP(L_USER_RESULT)
+
+// 7. Webhook管理操作
+LABEL(L_WEBHOOK_OP)
+EXTRACT(webhook_op_type, output, "创建/删除钩子区分")
+IF(webhook_op_type = "create")
+    THEN CALL(CreateWebhook, {}); JMP(L_USER_RESULT)
+ELSE IF(webhook_op_type = "delete")
+    THEN CALL(DeleteWebhook, {}); RETURN "204 推送服务已停止"
+
+// 8. 统一返回结果至用户
+LABEL(L_USER_RESULT)
+RETURN "操作执行完成，已返回对应业务数据"
+
+// 全局风险回滚
+LABEL(L_RISK_ROLLBACK)
+CALL(CancelPendingRequest, "撤销未完成接口请求")
+JMP(main_start)

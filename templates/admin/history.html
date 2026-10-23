@@ -1,0 +1,13 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<h3>检测历史案例</h3>
+<table class="table table-bordered mt-3 bg-white">
+    <tr><th>智能体</th><th>检测方法</th><th>耗时</th><th>结果</th><th>日期</th></tr>
+    {%for h in history%}
+    <tr>
+        <td>{{h.agent}}</td><td>{{h.method}}</td>
+        <td>{{h.time}}</td><td>{{h.result}}</td><td>{{h.date}}</td>
+    </tr>
+    {%endfor%}
+</table>
+{% endblock %}

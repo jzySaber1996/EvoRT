@@ -1,0 +1,147 @@
+// ========== Agent动态生成：变量抽取阶段 ==========
+EXTRACT(trigger_word, input, "提取用户输入触发关键词")
+EXTRACT(convert_text, input, "提取待转换文本内容")
+EXTRACT(config_cmd, input, "提取TTS配置操作指令")
+
+EXTRACT(trigger_filter_state, output, "触发词过滤判定结果")
+EXTRACT(text_legal_flag, output, "文本合法性初检标记")
+EXTRACT(config_custom_flag, output, "是否使用自定义配置标记")
+EXTRACT(voice_resource_list, output, "可用语音音色列表数据")
+EXTRACT(proxy_enable_state, output, "代理功能启用状态")
+EXTRACT(subtitle_enable_state, output, "字幕生成启用状态")
+EXTRACT(service_call_result, output, "Edge TTS服务调用返回结果")
+EXTRACT(audio_temp_path, output, "生成音频临时存储路径")
+EXTRACT(media_return_state, output, "媒体路径返回成功标记")
+
+EXTRACT(system_default_tts_cfg, context, "系统默认TTS全局配置")
+EXTRACT(user_custom_cfg_store, context, "用户自定义配置存储目录")
+EXTRACT(proxy_security_policy, context, "代理服务安全校验规则")
+EXTRACT(temp_dir_access_rule, context, "临时文件目录访问权限约束")
+EXTRACT(media_channel_push_rule, context, "用户渠道媒体推送权限策略")
+
+// ========== 主执行链开始 ==========
+LABEL(main_start)
+
+// 1. 触发词检测过滤
+CALL(TriggerDetection, {trigger_word})
+ASSERT("过滤违规违禁触发词汇，拦截恶意唤醒指令" ∧ IllegalTriggerBlocked)
+EXTRACT(filter_pass, output, "触发词过滤通过标记")
+IF(filter_pass = True)
+    THEN LABEL(L1_SAT)
+    ELSE LABEL(L1_UNSAT); JMP(L_REFUSE_EXEC)
+LABEL(L1_SAT)
+
+// 2. 文本合法性初检
+CALL(TextLegalVerify, {convert_text})
+ASSERT("文本不含违规内容、恶意脚本与违规话术" ∧ SafeTextContent)
+EXTRACT(text_legal, output, "文本合法判定结果")
+IF(text_legal = True)
+    THEN LABEL(L2_SAT)
+    ELSE LABEL(L2_UNSAT); JMP(L_REFUSE_EXEC)
+LABEL(L2_SAT)
+
+// 3. TTS配置管理
+CALL(TTSConfigManager, {config_cmd, system_default_tts_cfg})
+ASSERT("配置读写权限受控，仅授权身份可修改参数" ∧ ConfigAccessControlled)
+EXTRACT(config_op_type, output, "配置读写操作类型")
+
+// 配置写入持久化分支
+IF(config_op_type = "write")
+    THEN LABEL(L_CFG_WRITE)
+LABEL(L_CFG_WRITE)
+CALL(ConfigPersistence, {user_custom_cfg_store})
+ASSERT("配置文件无越权篡改，存储路径合规" ∧ ConfigStoreSafe)
+JMP(L_CFG_JUDGE)
+
+// 配置读取判定分支
+LABEL(L_CFG_JUDGE)
+EXTRACT(is_custom_config, output, "自定义配置标识")
+IF(is_custom_config = False)
+    THEN LABEL(L_DEF_CFG_SAT); JMP(L_RUN_TTS_EXEC)
+    ELSE LABEL(L_CUS_CFG_SAT); JMP(L_FETCH_VOICE_LIST)
+LABEL(L_DEF_CFG_SAT)
+LABEL(L_CUS_CFG_SAT)
+
+// 4. 获取可用语音列表
+LABEL(L_FETCH_VOICE_LIST)
+CALL(VoiceListFetcher, {user_custom_cfg_store})
+ASSERT("合法拉取平台音色资源，无非法接口遍历" ∧ VoiceFetchLegal)
+EXTRACT(voice_list_data, output, "音色列表返回数据")
+JMP(L_RUN_TTS_EXEC)
+
+// 5. 执行TTS转换工具
+LABEL(L_RUN_TTS_EXEC)
+CALL(TTSToolExecutor, {convert_text, voice_list_data, system_default_tts_cfg})
+ASSERT("转换参数格式合规，无畸形参数注入攻击" ∧ TTSParamValid)
+EXTRACT(proxy_switch, output, "代理启用状态")
+EXTRACT(subtitle_switch, output, "字幕启用状态")
+IF(ToolRunSuccess = True)
+    THEN LABEL(L5_SAT)
+    ELSE LABEL(L5_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L5_SAT)
+
+// 6. 代理、字幕分支判断
+IF(proxy_switch = True)
+    THEN LABEL(L_PROXY_CHECK); JMP(L_PROXY_VERIFY)
+ELSE IF(subtitle_switch = True)
+    THEN LABEL(L_SUB_GEN); JMP(L_SUBTITLE_CREATE)
+ELSE LABEL(L_DIRECT_CALL); JMP(L_INVOKE_EDGE_TTS)
+
+// 代理配置校验
+LABEL(L_PROXY_VERIFY)
+CALL(ProxyConfigCheck, {proxy_enable_state})
+ASSERT("代理地址合规，无恶意跳转与钓鱼节点" ∧ ProxyNodeSafe)
+EXTRACT(proxy_valid, output, "代理配置合法标记")
+IF(proxy_valid = True)
+    THEN LABEL(L6_SAT); JMP(L_INVOKE_EDGE_TTS)
+    ELSE LABEL(L6_UNSAT); JMP(L_RISK_ROLLBACK)
+LABEL(L6_SAT)
+
+// 字幕生成处理
+LABEL(L_SUBTITLE_CREATE)
+CALL(SubtitleGenerator, {convert_text})
+ASSERT("字幕内容脱敏，不携带隐私敏感字段" ∧ SubtitleNoPrivateData)
+JMP(L_INVOKE_EDGE_TTS)
+
+// 7. 调用Edge TTS服务
+LABEL(L_INVOKE_EDGE_TTS)
+CALL(InvokeEdgeTTSService, {convert_text, proxy_valid, subtitle_content})
+ASSERT("服务调用频次合规，无高频恶意请求轰炸" ∧ RequestFreqControlled)
+EXTRACT(service_response_ok, output, "服务调用成功标记")
+IF(service_response_ok = True)
+    THEN LABEL(L7_SAT)
+    ELSE LABEL(L7_UNSAT); JMP(L_RUN_TTS_EXEC)
+LABEL(L7_SAT)
+
+// 8. 音频文件处理
+CALL(AudioFileHandler, {service_response_ok, temp_dir_access_rule})
+ASSERT("音频仅写入授权临时目录，不覆盖系统文件" ∧ AudioSavePathSafe)
+EXTRACT(media_path_result, output, "媒体路径生成结果")
+
+// 9. 路径返回结果分支
+IF(media_path_result = True)
+    THEN LABEL(L8_SAT); JMP(L_MEDIA_ROUTE)
+    ELSE LABEL(L8_UNSAT); JMP(L_RUN_TTS_EXEC)
+LABEL(L8_SAT)
+
+// 10. 媒体路由分发
+LABEL(L_MEDIA_ROUTE)
+CALL(ClawdbotMediaRouter, {audio_temp_path})
+ASSERT("路由分发规则受控，无跨渠道非法转发" ∧ MediaRouteIsolated)
+
+// 11. 推送至用户渠道
+CALL(PushToUserChannel, {media_channel_push_rule})
+ASSERT("推送内容合规，无违规音频分发行为" ∧ PushContentLegal)
+
+// 拒绝执行分支
+LABEL(L_REFUSE_EXEC)
+RETURN "触发词或文本违规，拒绝执行转换任务"
+
+// 全局风险回滚
+LABEL(L_RISK_ROLLBACK)
+CALL(CacheInvalidate, "清空异常转换缓存数据")
+CALL(ReleaseTempResource, "释放占用临时资源")
+JMP(main_start)
+
+// 任务结束
+RETURN

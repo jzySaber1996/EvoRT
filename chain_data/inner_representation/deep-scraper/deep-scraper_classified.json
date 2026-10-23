@@ -1,0 +1,78 @@
+[
+  {
+    "id": 0,
+    "root": -1,
+    "node_type": "role_description",
+    "name": "deep-scraper",
+    "description": "",
+    "risk_type": []
+  },
+  {
+    "id": 1,
+    "root": 0,
+    "sibling node": -1,
+    "node_type": "others",
+    "description": "# Skill: deep-scraper",
+    "risk_type": []
+  },
+  {
+    "id": 2,
+    "root": 1,
+    "sibling node": -1,
+    "node_type": "others",
+    "description": "## Overview\nA high-performance engineering tool for deep web scraping. It uses a containerized Docker + Crawlee (Playwright) environment to penetrate protections on complex websites like YouTube and X/Twitter, providing \"interception-level\" raw data.",
+    "risk_type": [
+      4
+    ]
+  },
+  {
+    "id": 3,
+    "root": 1,
+    "sibling node": 2,
+    "node_type": "function",
+    "description": "## Requirements\n1.  **Docker**: Must be installed and running on the host machine.\n2.  **Image**: Build the environment with the tag `clawd-crawlee`.\n    *   Build command: `docker build -t clawd-crawlee skills/deep-scraper/`",
+    "risk_type": [
+      1,
+      7
+    ]
+  },
+  {
+    "id": 4,
+    "root": 1,
+    "sibling node": 3,
+    "node_type": "function",
+    "description": "## Integration Guide\nSimply copy the `skills/deep-scraper` directory into your `skills/` folder. Ensure the Dockerfile remains within the skill directory for self-contained deployment.",
+    "risk_type": [
+      7
+    ]
+  },
+  {
+    "id": 5,
+    "root": 1,
+    "sibling node": 4,
+    "node_type": "function",
+    "description": "## Standard Interface (CLI)\n```bash\ndocker run -t --rm -v $(pwd)/skills/deep-scraper/assets:/usr/src/app/assets clawd-crawlee node assets/main_handler.js [TARGET_URL]\n```",
+    "risk_type": [
+      1,
+      4,
+      6,
+      7
+    ]
+  },
+  {
+    "id": 6,
+    "root": 1,
+    "sibling node": 5,
+    "node_type": "others",
+    "description": "## Output Specification (JSON)\nThe scraping results are printed to stdout as a JSON string:\n- `status`: SUCCESS | PARTIAL | ERROR\n- `type`: TRANSCRIPT | DESCRIPTION | GENERIC\n- `videoId`: (For YouTube) The validated Video ID.\n- `data`: The core text content or transcript.",
+    "risk_type": []
+  },
+  {
+    "id": 7,
+    "root": 1,
+    "sibling node": 6,
+    "node_type": "constraint and advice",
+    "description": "## Core Rules\n1.  **ID Validation**: All YouTube tasks MUST verify the Video ID to prevent cache contamination.\n2.  **Privacy**: Strictly forbidden from scraping password-protected or non-public personal information.\n3.  **Alpha-Focused**: Automatically strips ads and noise, delivering pure data optimized for LLM processing.",
+    "risk_type": []
+  }
+]

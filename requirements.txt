@@ -1,0 +1,6 @@
+# Python dependencies for the AgentSecuritySAT Flask web application.
+# ASB is launched as an external backend through ASB_PYTHON and should use
+# its own environment; see requirements-asb.txt and README.md.
+Flask==3.1.3
+z3-solver==4.15.4.0
+requests>=2.31,<3.0
